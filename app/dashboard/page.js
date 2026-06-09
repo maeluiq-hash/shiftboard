@@ -13,11 +13,26 @@ export default async function DashboardPage() {
     .eq('id', user.id)
     .single()
 
-  const { data: shifts } = await supabase
+  const { data: myShifts } = await supabase
     .from('shifts')
     .select('*')
     .eq('employee_id', user.id)
     .order('date')
 
-  return <DashboardClient profile={profile} shifts={shifts || []} />
+  const { data: allShifts } = await supabase
+    .from('shifts')
+    .select('*')
+    .order('date')
+
+  const { data: employees } = await supabase
+    .from('profiles')
+    .select('id, full_name')
+    .eq('role', 'employee')
+
+  return <DashboardClient
+    profile={profile}
+    shifts={myShifts || []}
+    allShifts={allShifts || []}
+    employees={employees || []}
+  />
 }
