@@ -57,7 +57,7 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
     return d.toISOString().split('T')[0]
   })
   const weekLabel = `${monday.getDate()} ${monday.toLocaleString('fr-FR', {month:'long'})} – ${new Date(weekDates[6]).getDate()} ${new Date(weekDates[6]).toLocaleString('fr-FR', {month:'long', year:'numeric'})}`
-  const empEmployees = employees.filter(e => e.role === 'employee')
+  const empEmployees = employees
 
   function getCellShifts(employeeId, date) {
     return shifts.filter(s => s.employee_id === employeeId && s.date === date)
