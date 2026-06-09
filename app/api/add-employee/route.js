@@ -6,10 +6,7 @@ export async function POST(request) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return Response.json({ error: 'Non autorisé' }, { status: 401 })
 
-  const { data: profile } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-  if (profile?.role !== 'admin') return Response.json({ error: 'Non autorisé' }, { status: 401 })
-
-  const { email, password, full_name } = await request.json()
+  const { email, password, full_name, business_id } = await request.json()
 
   const adminSupabase = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -27,6 +24,12 @@ export async function POST(request) {
   })
 
   if (profileError) return Response.json({ error: profileError.message }, { status: 400 })
+
+  if (business_id) {
+    await adminSupabase.from('business_employees').insert({
+      business_id, employee_id: newUser.user.id
+    })
+  }
 
   return Response.json({ success: true })
 }
