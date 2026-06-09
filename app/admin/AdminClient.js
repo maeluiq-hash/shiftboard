@@ -4,38 +4,32 @@ import ShiftPopup from './ShiftPopup'
 import SettingsTab from './SettingsTab'
 
 const EMP_COLORS = [
-  { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8', dot: '#3B82F6' },
-  { bg: '#F5F3FF', border: '#DDD6FE', text: '#6D28D9', dot: '#8B5CF6' },
-  { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46', dot: '#10B981' },
-  { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C', dot: '#F97316' },
-  { bg: '#FDF2F8', border: '#F9A8D4', text: '#9D174D', dot: '#EC4899' },
-  { bg: '#F0FDFA', border: '#99F6E4', text: '#0F766E', dot: '#14B8A6' },
-  { bg: '#FEFCE8', border: '#FDE68A', text: '#92400E', dot: '#F59E0B' },
-  { bg: '#EEF2FF', border: '#C7D2FE', text: '#3730A3', dot: '#6366F1' },
+  { bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8' },
+  { bg: '#F5F3FF', border: '#DDD6FE', text: '#6D28D9' },
+  { bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46' },
+  { bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C' },
+  { bg: '#FDF2F8', border: '#F9A8D4', text: '#9D174D' },
+  { bg: '#F0FDFA', border: '#99F6E4', text: '#0F766E' },
+  { bg: '#FEFCE8', border: '#FDE68A', text: '#92400E' },
+  { bg: '#EEF2FF', border: '#C7D2FE', text: '#3730A3' },
 ]
 
-function getDuration(start, end) {
+function getMins(start, end) {
   const [sh, sm] = start.slice(0,5).split(':').map(Number)
   const [eh, em] = end.slice(0,5).split(':').map(Number)
   let mins = (eh * 60 + em) - (sh * 60 + sm)
   if (mins < 0) mins += 24 * 60
+  return mins
+}
+
+function formatHours(mins) {
   const h = Math.floor(mins / 60)
   const m = mins % 60
   return m > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${h}h`
 }
 
-function getTotalHours(shifts) {
-  let total = 0
-  shifts.forEach(s => {
-    const [sh, sm] = s.start_time.slice(0,5).split(':').map(Number)
-    const [eh, em] = s.end_time.slice(0,5).split(':').map(Number)
-    let mins = (eh * 60 + em) - (sh * 60 + sm)
-    if (mins < 0) mins += 24 * 60
-    total += mins
-  })
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  return m > 0 ? `${h}h${m.toString().padStart(2,'0')}` : `${h}h`
+function getTotalMins(shifts) {
+  return shifts.reduce((acc, s) => acc + getMins(s.start_time, s.end_time), 0)
 }
 
 export default function AdminClient({ profile, employees, shifts: initialShifts, pending }) {
@@ -66,8 +60,8 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
   const empEmployees = employees.filter(e => e.role === 'employee')
 
   function getShift(employeeId, date) { return shifts.find(s => s.employee_id === employeeId && s.date === date) }
-  function getEmpShifts(employeeId) { return shifts.filter(s => s.employee_id === employeeId && weekDates.includes(s.date)) }
-  function getDayShifts(date) { return shifts.filter(s => s.date === date) }
+  function getEmpWeekShifts(employeeId) { return shifts.filter(s => s.employee_id === employeeId && weekDates.includes(s.date)) }
+  function getDayShifts(date) { return shifts.filter(s => s.date === date && empEmployees.find(e => e.id === s.employee_id)) }
 
   async function applyShift(option) {
     const { emp, date } = popup
@@ -123,11 +117,8 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
     { key: 'settings', icon: '⚙️', label: 'Paramètres' },
   ]
 
-  const statCards = [
-    { label: 'Employés', value: empEmployees.length, icon: '👥', color: '#3B82F6', bg: '#EFF6FF' },
-    { label: 'Shifts cette semaine', value: weekDates.reduce((acc, d) => acc + getDayShifts(d).length, 0), icon: '📋', color: '#10B981', bg: '#ECFDF5' },
-    { label: 'En attente', value: pendingList.length, icon: '⏳', color: '#F59E0B', bg: '#FEFCE8' },
-  ]
+  const totalWeekMins = weekDates.reduce((acc, d) => acc + getTotalMins(getDayShifts(d)), 0)
+  const totalWeekShifts = weekDates.reduce((acc, d) => acc + getDayShifts(d).length, 0)
 
   return (
     <>
@@ -135,127 +126,113 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: #F0F4F8; font-family: 'Inter', -apple-system, sans-serif; color: #111827; }
-        input, textarea, select { color: #111827 !important; font-family: 'Inter', -apple-system, sans-serif; }
+        input, textarea, select { color: #111827 !important; font-family: 'Inter', sans-serif; }
         input::placeholder, textarea::placeholder { color: #9CA3AF !important; }
 
         .sb-wrap { max-width: 1440px; margin: 0 auto; padding: 20px 24px; }
-
-        .sb-nav { background: white; border-radius: 20px; padding: 14px 24px; display: flex; align-items: center; gap: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); }
+        .sb-nav { background: white; border-radius: 20px; padding: 14px 24px; display: flex; align-items: center; gap: 16px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); }
         .sb-logo { width: 40px; height: 40px; background: linear-gradient(135deg, #1D9E75, #0F6E56); border-radius: 12px; display: flex; align-items: center; justify-content: center; color: white; font-size: 20px; flex-shrink: 0; box-shadow: 0 4px 12px rgba(29,158,117,0.3); }
-        .sb-appname { font-size: 18px; font-weight: 700; color: #111827; letter-spacing: -0.3px; }
+        .sb-appname { font-size: 18px; font-weight: 700; color: #111827; }
         .sb-badge { font-size: 11px; font-weight: 600; color: #1D9E75; background: #ECFDF5; padding: 2px 8px; border-radius: 20px; border: 1px solid #A7F3D0; }
         .sb-nav-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
-        .sb-user { display: flex; align-items: center; gap: 8px; }
         .sb-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #1D9E75, #0F6E56); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 700; }
         .sb-username { font-size: 13px; font-weight: 500; color: #374151; }
-        .sb-logout { padding: 7px 16px; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; font-size: 13px; color: #6B7280; cursor: pointer; font-weight: 500; transition: all 0.15s; }
-        .sb-logout:hover { background: #F3F4F6; color: #374151; }
+        .sb-logout { padding: 7px 16px; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; font-size: 13px; color: #6B7280; cursor: pointer; font-weight: 500; }
+        .sb-logout:hover { background: #F3F4F6; }
 
-        .sb-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
-        .sb-stat { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); display: flex; align-items: center; gap: 14px; }
-        .sb-stat-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
-        .sb-stat-val { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
-        .sb-stat-lbl { font-size: 12px; color: #6B7280; font-weight: 500; margin-top: 1px; }
+        .sb-pending { background: linear-gradient(135deg, #FFFBEB, #FEF3C7); border: 1px solid #FDE68A; border-radius: 16px; padding: 16px 20px; margin-bottom: 20px; }
+        .sb-pending-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; background: white; border-radius: 10px; padding: 10px 14px; flex-wrap: wrap; }
+        .sb-approve { padding: 6px 14px; background: #1D9E75; color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; }
+        .sb-refuse { padding: 6px 14px; background: white; color: #EF4444; border: 1px solid #FECACA; border-radius: 8px; font-size: 12px; cursor: pointer; }
 
-        .sb-pending { background: linear-gradient(135deg, #FFFBEB, #FEF3C7); border: 1px solid #FDE68A; border-radius: 16px; padding: 16px 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-        .sb-pending-title { font-size: 13px; font-weight: 700; color: #92400E; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
-        .sb-pending-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; background: white; border-radius: 10px; padding: 10px 14px; }
-        .sb-pending-name { font-size: 13px; font-weight: 600; flex: 1; min-width: 120px; }
-        .sb-pending-email { font-size: 12px; color: #9CA3AF; }
-        .sb-approve { padding: 6px 14px; background: #1D9E75; color: white; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-        .sb-approve:hover { background: #0F6E56; transform: translateY(-1px); }
-        .sb-refuse { padding: 6px 14px; background: white; color: #EF4444; border: 1px solid #FECACA; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
-        .sb-refuse:hover { background: #FEF2F2; }
-
-        .sb-tabs { display: flex; gap: 4px; background: white; border-radius: 16px; padding: 6px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); overflow-x: auto; width: fit-content; }
-        .sb-tab { padding: 8px 20px; border-radius: 12px; border: none; font-size: 13px; cursor: pointer; background: transparent; color: #6B7280; font-weight: 500; white-space: nowrap; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
-        .sb-tab:hover { background: #F9FAFB; color: #374151; }
+        .sb-tabs { display: flex; gap: 4px; background: white; border-radius: 16px; padding: 6px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); overflow-x: auto; width: fit-content; max-width: 100%; }
+        .sb-tab { padding: 8px 18px; border-radius: 12px; border: none; font-size: 13px; cursor: pointer; background: transparent; color: #6B7280; font-weight: 500; white-space: nowrap; transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
         .sb-tab.active { background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; box-shadow: 0 4px 12px rgba(29,158,117,0.3); }
 
-        .sb-card { background: white; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); overflow: hidden; }
-        .sb-card-header { padding: 16px 24px; border-bottom: 1px solid #F3F4F6; display: flex; align-items: center; gap: 12px; }
-        .sb-card-title { font-size: 15px; font-weight: 700; color: #111827; }
-        .sb-card-sub { font-size: 12px; color: #9CA3AF; margin-left: auto; }
-
-        .sb-week-nav { display: flex; align-items: center; gap: 10px; }
-        .sb-nav-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid #E5E7EB; background: white; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; color: #374151; }
-        .sb-nav-btn:hover { background: #F9FAFB; border-color: #D1D5DB; transform: translateY(-1px); }
-        .sb-today-btn { font-size: 12px; color: #1D9E75; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 5px 12px; cursor: pointer; font-weight: 600; transition: all 0.15s; }
-        .sb-today-btn:hover { background: #D1FAE5; }
-        .sb-week-lbl { font-size: 14px; font-weight: 600; color: #374151; letter-spacing: -0.2px; }
+        .sb-planning-card { background: white; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); overflow: hidden; }
+        .sb-toolbar { padding: 14px 20px; border-bottom: 1px solid #F3F4F6; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .sb-nav-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid #E5E7EB; background: white; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .sb-nav-btn:hover { background: #F9FAFB; transform: translateY(-1px); }
+        .sb-week-lbl { font-size: 14px; font-weight: 600; color: #374151; }
+        .sb-today-btn { font-size: 12px; color: #1D9E75; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
+        .sb-week-summary { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+        .sb-week-stat { text-align: center; }
+        .sb-week-stat-val { font-size: 16px; font-weight: 700; color: #1D9E75; }
+        .sb-week-stat-lbl { font-size: 10px; color: #9CA3AF; font-weight: 500; text-transform: uppercase; letter-spacing: 0.3px; }
 
         .sb-grid-outer { overflow-x: auto; }
-        .sb-grid { display: grid; grid-template-columns: 170px repeat(7, 1fr); min-width: 720px; }
-        .sb-gh { padding: 12px 8px; text-align: center; background: #FAFAFA; border-bottom: 1px solid #F3F4F6; }
-        .sb-gh:first-child { text-align: left; padding-left: 20px; border-right: 1px solid #F3F4F6; }
-        .sb-gh-day { font-size: 11px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.5px; }
-        .sb-gh-date { font-size: 22px; font-weight: 700; color: #374151; line-height: 1.1; margin: 3px 0; }
-        .sb-gh-info { font-size: 11px; color: #9CA3AF; font-weight: 500; }
+        .sb-grid { display: grid; grid-template-columns: 170px repeat(7, 1fr) 80px; min-width: 780px; }
+        .sb-gh { padding: 10px 6px; text-align: center; background: #FAFAFA; border-bottom: 1px solid #F3F4F6; }
+        .sb-gh:first-child { text-align: left; padding-left: 18px; border-right: 1px solid #F3F4F6; }
+        .sb-gh:last-child { background: #F8FAFC; border-left: 1px solid #F3F4F6; }
+        .sb-gh-day { font-size: 10px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sb-gh-date { font-size: 20px; font-weight: 700; color: #374151; line-height: 1.1; margin: 3px 0; }
+        .sb-gh-info { font-size: 10px; color: #9CA3AF; font-weight: 600; }
         .sb-gh.is-today .sb-gh-day { color: #1D9E75; }
-        .sb-gh.is-today .sb-gh-date { color: white; background: linear-gradient(135deg, #1D9E75, #0F6E56); border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; margin: 3px auto; font-size: 16px; box-shadow: 0 4px 12px rgba(29,158,117,0.3); }
+        .sb-gh.is-today .sb-gh-date { color: white; background: linear-gradient(135deg, #1D9E75, #0F6E56); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; margin: 3px auto; font-size: 15px; box-shadow: 0 4px 12px rgba(29,158,117,0.3); }
 
-        .sb-emp-row { display: contents; }
-        .sb-emp-cell { padding: 12px 16px; display: flex; align-items: center; gap: 10px; border-right: 1px solid #F3F4F6; border-bottom: 1px solid #F9FAFB; background: white; transition: background 0.1s; }
-        .sb-emp-cell:hover { background: #FAFAFA; }
-        .sb-emp-av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; flex-shrink: 0; }
-        .sb-emp-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .sb-emp-hours { font-size: 11px; color: #9CA3AF; font-weight: 500; }
+        .sb-emp-cell { padding: 10px 14px; display: flex; align-items: center; gap: 8px; border-right: 1px solid #F3F4F6; border-bottom: 1px solid #F9FAFB; background: white; }
+        .sb-emp-av { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; flex-shrink: 0; }
+        .sb-emp-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sb-emp-h { font-size: 10px; color: #9CA3AF; font-weight: 500; }
 
-        .sb-shift-cell { padding: 5px; border-bottom: 1px solid #F9FAFB; border-left: 1px solid #F9FAFB; cursor: pointer; min-height: 62px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+        .sb-shift-cell { padding: 4px; border-bottom: 1px solid #F9FAFB; border-left: 1px solid #F9FAFB; cursor: pointer; min-height: 60px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
         .sb-shift-cell:hover { background: #F9FAFB; }
-        .sb-shift-block { border-radius: 10px; padding: 6px 8px; width: 100%; border: 1.5px solid transparent; transition: transform 0.15s, box-shadow 0.15s; }
-        .sb-shift-block:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .sb-shift-block { border-radius: 9px; padding: 5px 7px; width: 100%; border: 1.5px solid transparent; transition: transform 0.15s; }
+        .sb-shift-block:hover { transform: translateY(-1px); }
         .sb-shift-time { font-size: 11px; font-weight: 700; }
-        .sb-shift-dur { font-size: 10px; opacity: 0.7; margin-top: 2px; font-weight: 500; }
-        .sb-cell-plus { color: #D1D5DB; font-size: 22px; font-weight: 300; transition: color 0.15s; }
+        .sb-shift-dur { font-size: 10px; opacity: 0.7; margin-top: 1px; }
+        .sb-cell-plus { color: #D1D5DB; font-size: 20px; transition: color 0.15s; }
         .sb-shift-cell:hover .sb-cell-plus { color: #1D9E75; }
 
-        .sb-emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
-        .sb-emp-card { background: white; border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); transition: transform 0.15s, box-shadow 0.15s; }
-        .sb-emp-card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.07), 0 10px 30px rgba(0,0,0,0.06); }
-        .sb-emp-card-av { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
-        .sb-del-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid #FECACA; background: #FEF2F2; color: #EF4444; cursor: pointer; font-size: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
-        .sb-del-btn:hover { background: #FEE2E2; transform: scale(1.05); }
+        .sb-total-cell { padding: 4px 8px; border-bottom: 1px solid #F9FAFB; border-left: 1px solid #F3F4F6; display: flex; align-items: center; justify-content: center; min-height: 60px; background: #FAFAFA; }
+        .sb-total-val { font-size: 12px; font-weight: 700; color: #374151; text-align: center; }
+        .sb-total-shifts { font-size: 10px; color: #9CA3AF; text-align: center; }
 
+        .sb-day-total-row { display: contents; }
+        .sb-day-total-cell { padding: 8px 6px; background: #F8FAFC; border-top: 1.5px solid #E5E7EB; text-align: center; border-left: 1px solid #F3F4F6; }
+        .sb-day-total-cell:first-child { text-align: left; padding-left: 18px; border-right: 1px solid #F3F4F6; border-left: none; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.3px; }
+        .sb-day-total-cell:last-child { border-left: 1px solid #F3F4F6; }
+        .sb-day-h { font-size: 12px; font-weight: 700; color: #374151; }
+        .sb-day-p { font-size: 10px; color: #9CA3AF; font-weight: 500; }
+
+        .sb-card { background: white; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); padding: 24px; }
+        .sb-emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+        .sb-emp-card { background: white; border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); transition: transform 0.15s; }
+        .sb-emp-card:hover { transform: translateY(-2px); }
+        .sb-emp-card-av { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
+        .sb-del-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid #FECACA; background: #FEF2F2; color: #EF4444; cursor: pointer; font-size: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
         .sb-add-form { background: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); }
         .sb-add-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
         @media (min-width: 640px) { .sb-add-grid { grid-template-columns: 1fr 1fr 1fr; } }
-        .sb-field label { display: block; font-size: 12px; color: #6B7280; margin-bottom: 5px; font-weight: 600; letter-spacing: 0.3px; }
-        .sb-field input { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1.5px solid #E5E7EB; font-size: 13px; color: #111827; transition: border-color 0.15s, box-shadow 0.15s; background: #FAFAFA; }
+        .sb-field label { display: block; font-size: 12px; color: #6B7280; margin-bottom: 5px; font-weight: 600; }
+        .sb-field input { width: 100%; padding: 9px 12px; border-radius: 10px; border: 1.5px solid #E5E7EB; font-size: 13px; color: #111827; background: #FAFAFA; transition: all 0.15s; }
         .sb-field input:focus { outline: none; border-color: #1D9E75; box-shadow: 0 0 0 3px rgba(29,158,117,0.1); background: white; }
-        .sb-add-btn { padding: 9px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
-        .sb-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(29,158,117,0.35); }
-        .sb-add-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .sb-add-btn { padding: 9px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(29,158,117,0.25); transition: all 0.2s; }
+        .sb-add-btn:hover { transform: translateY(-1px); }
         .sb-outline-btn { padding: 9px 20px; background: white; color: #374151; border: 1.5px solid #E5E7EB; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
-        .sb-outline-btn:hover { background: #F9FAFB; border-color: #D1D5DB; }
 
         .sb-ai-wrap { display: grid; grid-template-columns: 1fr; gap: 16px; }
         @media (min-width: 768px) { .sb-ai-wrap { grid-template-columns: 1fr 260px; } }
-        .sb-ai-msgs { min-height: 200px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+        .sb-ai-msgs { min-height: 200px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
         .sb-bubble { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
-        .sb-bubble-u { background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; align-self: flex-end; border-bottom-right-radius: 4px; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
-        .sb-bubble-a { background: #F3F4F6; color: #374151; align-self: flex-start; border-bottom-left-radius: 4px; }
+        .sb-bubble-u { background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; align-self: flex-end; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
+        .sb-bubble-a { background: #F3F4F6; color: #374151; align-self: flex-start; }
         .sb-ai-row { display: flex; gap: 8px; }
-        .sb-ai-input { flex: 1; padding: 10px 14px; border-radius: 12px; border: 1.5px solid #E5E7EB; font-size: 13px; outline: none; color: #111827; transition: border-color 0.15s, box-shadow 0.15s; background: #FAFAFA; }
+        .sb-ai-input { flex: 1; padding: 10px 14px; border-radius: 12px; border: 1.5px solid #E5E7EB; font-size: 13px; outline: none; color: #111827; background: #FAFAFA; transition: all 0.15s; }
         .sb-ai-input:focus { border-color: #1D9E75; box-shadow: 0 0 0 3px rgba(29,158,117,0.1); background: white; }
-        .sb-ai-send { padding: 10px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 12px; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
-        .sb-ai-send:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(29,158,117,0.35); }
-        .sb-ai-send:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .sb-ai-send { padding: 10px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(29,158,117,0.25); transition: all 0.2s; }
+        .sb-ai-send:hover { transform: translateY(-1px); }
         .sb-ex-item { padding: 10px 12px; border-radius: 10px; border: 1.5px solid #F3F4F6; font-size: 12px; color: #6B7280; cursor: pointer; margin-bottom: 8px; transition: all 0.15s; font-weight: 500; }
-        .sb-ex-item:hover { background: #F9FAFB; border-color: #1D9E75; color: #1D9E75; transform: translateX(2px); }
+        .sb-ex-item:hover { border-color: #1D9E75; color: #1D9E75; transform: translateX(2px); }
 
         .sb-empty { padding: 48px 20px; text-align: center; color: #9CA3AF; font-size: 14px; }
-        .sb-empty-icon { font-size: 36px; margin-bottom: 10px; }
-        .sb-empty-text { font-weight: 500; }
 
         @media (max-width: 640px) {
           .sb-wrap { padding: 12px 14px; }
-          .sb-nav { padding: 12px 16px; }
-          .sb-appname { font-size: 16px; }
           .sb-username { display: none; }
-          .sb-stats { grid-template-columns: 1fr 1fr; }
           .sb-tabs { width: 100%; }
-          .sb-tab { padding: 8px 12px; font-size: 12px; }
+          .sb-week-summary { display: none; }
         }
       `}</style>
 
@@ -267,36 +244,22 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
           <span className="sb-appname">ShiftBoard</span>
           <span className="sb-badge">Admin</span>
           <div className="sb-nav-right">
-            <div className="sb-user">
-              <div className="sb-avatar">{profile?.full_name?.split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
-              <span className="sb-username">{profile?.full_name}</span>
-            </div>
+            <div className="sb-avatar">{profile?.full_name?.split(' ').map(n=>n[0]).join('').slice(0,2)}</div>
+            <span className="sb-username">{profile?.full_name}</span>
             <form action="/api/logout" method="POST" style={{display:'inline'}}>
               <button type="submit" className="sb-logout">Déconnexion</button>
             </form>
           </div>
         </nav>
 
-        <div className="sb-stats">
-          {statCards.map((s,i) => (
-            <div key={i} className="sb-stat">
-              <div className="sb-stat-icon" style={{background: s.bg}}>{s.icon}</div>
-              <div>
-                <div className="sb-stat-val" style={{color: s.color}}>{s.value}</div>
-                <div className="sb-stat-lbl">{s.label}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
         {pendingList.length > 0 && (
           <div className="sb-pending">
-            <div className="sb-pending-title">⏳ {pendingList.length} compte{pendingList.length > 1 ? 's' : ''} en attente de validation</div>
+            <div style={{fontSize:'13px', fontWeight:'700', color:'#92400E', marginBottom:'10px'}}>⏳ {pendingList.length} compte{pendingList.length > 1 ? 's' : ''} en attente</div>
             {pendingList.map(emp => (
               <div key={emp.id} className="sb-pending-item">
                 <div style={{flex:1}}>
-                  <div className="sb-pending-name">{emp.full_name}</div>
-                  <div className="sb-pending-email">{emp.email}</div>
+                  <div style={{fontSize:'13px', fontWeight:'600'}}>{emp.full_name}</div>
+                  <div style={{fontSize:'12px', color:'#9CA3AF'}}>{emp.email}</div>
                 </div>
                 <button className="sb-approve" onClick={() => approveEmployee(emp.id)}>✓ Approuver</button>
                 <button className="sb-refuse" onClick={() => deleteEmployee(emp.id)}>✕ Refuser</button>
@@ -314,20 +277,28 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         </div>
 
         {tab === 'planning' && (
-          <div className="sb-card">
-            <div className="sb-card-header">
-              <div className="sb-week-nav">
-                <button className="sb-nav-btn" onClick={() => setWeekOffset(w => w-1)}>‹</button>
-                <span className="sb-week-lbl">{weekLabel}</span>
-                <button className="sb-nav-btn" onClick={() => setWeekOffset(w => w+1)}>›</button>
-                {weekOffset !== 0 && <button className="sb-today-btn" onClick={() => setWeekOffset(0)}>Aujourd'hui</button>}
+          <div className="sb-planning-card">
+            <div className="sb-toolbar">
+              <button className="sb-nav-btn" onClick={() => setWeekOffset(w => w-1)}>‹</button>
+              <span className="sb-week-lbl">{weekLabel}</span>
+              <button className="sb-nav-btn" onClick={() => setWeekOffset(w => w+1)}>›</button>
+              {weekOffset !== 0 && <button className="sb-today-btn" onClick={() => setWeekOffset(0)}>Aujourd'hui</button>}
+              <div className="sb-week-summary">
+                <div className="sb-week-stat">
+                  <div className="sb-week-stat-val">{formatHours(totalWeekMins)}</div>
+                  <div className="sb-week-stat-lbl">Heures semaine</div>
+                </div>
+                <div style={{width:'1px', height:'30px', background:'#E5E7EB'}}></div>
+                <div className="sb-week-stat">
+                  <div className="sb-week-stat-val">{totalWeekShifts}</div>
+                  <div className="sb-week-stat-lbl">Shifts total</div>
+                </div>
               </div>
-              <span className="sb-card-sub">{empEmployees.length} employé{empEmployees.length > 1 ? 's' : ''}</span>
             </div>
             <div className="sb-grid-outer">
               <div className="sb-grid">
                 <div className="sb-gh" style={{borderRight:'1px solid #F3F4F6'}}>
-                  <span style={{fontSize:'11px', fontWeight:'700', color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'0.5px'}}>Employé</span>
+                  <span style={{fontSize:'10px', fontWeight:'700', color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'0.5px'}}>Employé</span>
                 </div>
                 {weekDates.map((date, i) => {
                   const isToday = date === today.toISOString().split('T')[0]
@@ -336,13 +307,18 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                     <div key={date} className={`sb-gh${isToday?' is-today':''}`}>
                       <div className="sb-gh-day">{DAYS[i]}</div>
                       <div className="sb-gh-date">{new Date(date+'T12:00:00').getDate()}</div>
-                      {ds.length > 0 && <div className="sb-gh-info">{ds.length}p · {getTotalHours(ds)}</div>}
+                      {ds.length > 0 && <div className="sb-gh-info">{ds.length}p · {formatHours(getTotalMins(ds))}</div>}
                     </div>
                   )
                 })}
+                <div className="sb-gh" style={{borderLeft:'1px solid #F3F4F6'}}>
+                  <span style={{fontSize:'10px', fontWeight:'700', color:'#9CA3AF', textTransform:'uppercase', letterSpacing:'0.3px'}}>Total</span>
+                </div>
+
                 {empEmployees.map((emp, ei) => {
                   const c = EMP_COLORS[ei % EMP_COLORS.length]
-                  const empS = getEmpShifts(emp.id)
+                  const empS = getEmpWeekShifts(emp.id)
+                  const empMins = getTotalMins(empS)
                   return (
                     <div key={emp.id} style={{display:'contents'}}>
                       <div className="sb-emp-cell">
@@ -351,7 +327,7 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                         </div>
                         <div style={{flex:1, minWidth:0}}>
                           <div className="sb-emp-name">{emp.full_name}</div>
-                          <div className="sb-emp-hours">{empS.length > 0 ? getTotalHours(empS) : '0h'} cette sem.</div>
+                          <div className="sb-emp-h">{empMins > 0 ? formatHours(empMins) : '0h'} · {empS.length} shift{empS.length > 1 ? 's' : ''}</div>
                         </div>
                       </div>
                       {weekDates.map(date => {
@@ -361,33 +337,59 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                             {shift ? (
                               <div className="sb-shift-block" style={{background:c.bg, borderColor:c.border}}>
                                 <div className="sb-shift-time" style={{color:c.text}}>{shift.start_time.slice(0,5)} – {shift.end_time.slice(0,5)}</div>
-                                <div className="sb-shift-dur" style={{color:c.text}}>{getDuration(shift.start_time, shift.end_time)}</div>
+                                <div className="sb-shift-dur" style={{color:c.text}}>{formatHours(getMins(shift.start_time, shift.end_time))}</div>
                               </div>
                             ) : <span className="sb-cell-plus">+</span>}
                           </div>
                         )
                       })}
+                      <div className="sb-total-cell">
+                        <div>
+                          <div className="sb-total-val" style={{color: empMins > 0 ? c.text : '#D1D5DB'}}>{empMins > 0 ? formatHours(empMins) : '—'}</div>
+                          {empS.length > 0 && <div className="sb-total-shifts">{empS.length} shift{empS.length > 1 ? 's' : ''}</div>}
+                        </div>
+                      </div>
                     </div>
                   )
                 })}
+
+                {empEmployees.length > 0 && (
+                  <div style={{display:'contents'}}>
+                    <div className="sb-day-total-cell" style={{borderRight:'1px solid #F3F4F6'}}>Heures trav.</div>
+                    {weekDates.map(date => {
+                      const ds = getDayShifts(date)
+                      const dayMins = getTotalMins(ds)
+                      return (
+                        <div key={date} className="sb-day-total-cell">
+                          {dayMins > 0 ? (
+                            <>
+                              <div className="sb-day-h">{formatHours(dayMins)}</div>
+                              <div className="sb-day-p">{ds.length} pers.</div>
+                            </>
+                          ) : <span style={{color:'#E5E7EB', fontSize:'12px'}}>—</span>}
+                        </div>
+                      )
+                    })}
+                    <div className="sb-day-total-cell" style={{borderLeft:'1px solid #F3F4F6'}}>
+                      <div className="sb-day-h" style={{color:'#1D9E75'}}>{formatHours(totalWeekMins)}</div>
+                      <div className="sb-day-p">total</div>
+                    </div>
+                  </div>
+                )}
+
+                {empEmployees.length === 0 && (
+                  <div style={{gridColumn:'1/-1'}} className="sb-empty">Aucun employé — ajoutez-en dans l'onglet Équipe</div>
+                )}
               </div>
-              {empEmployees.length === 0 && (
-                <div className="sb-empty">
-                  <div className="sb-empty-icon">👥</div>
-                  <div className="sb-empty-text">Aucun employé — ajoutez-en dans l'onglet Équipe</div>
-                </div>
-              )}
             </div>
           </div>
         )}
 
         {tab === 'ia' && (
           <div className="sb-ai-wrap">
-            <div className="sb-card" style={{padding:'24px'}}>
-              <div style={{marginBottom:'20px'}}>
-                <h2 style={{fontSize:'16px', fontWeight:'700', marginBottom:'4px'}}>Assistant IA</h2>
-                <p style={{fontSize:'13px', color:'#9CA3AF'}}>Génère les horaires en langage naturel. L'IA utilise vos paramètres d'établissement automatiquement.</p>
-              </div>
+            <div className="sb-card">
+              <h2 style={{fontSize:'16px', fontWeight:'700', marginBottom:'4px'}}>Assistant IA</h2>
+              <p style={{fontSize:'13px', color:'#9CA3AF', marginBottom:'20px'}}>Génère les horaires en langage naturel.</p>
               <div className="sb-ai-msgs">
                 {chatHistory.length === 0 && (
                   <div style={{textAlign:'center', padding:'40px 0', color:'#D1D5DB'}}>
@@ -396,22 +398,16 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                   </div>
                 )}
                 {chatHistory.map((m,i) => <div key={i} className={`sb-bubble ${m.role==='user'?'sb-bubble-u':'sb-bubble-a'}`}>{m.text}</div>)}
-                {aiLoading && <div className="sb-bubble sb-bubble-a" style={{display:'flex', alignItems:'center', gap:'8px'}}><span style={{animation:'spin 1s linear infinite', display:'inline-block'}}>⏳</span> Génération en cours...</div>}
+                {aiLoading && <div className="sb-bubble sb-bubble-a">⏳ Génération en cours...</div>}
               </div>
               <div className="sb-ai-row">
-                <input className="sb-ai-input" value={aiMessage} onChange={e=>setAiMessage(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendToAI()} placeholder="Ex: Fais les horaires de la semaine prochaine pour toute l'équipe..." />
+                <input className="sb-ai-input" value={aiMessage} onChange={e=>setAiMessage(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendToAI()} placeholder="Ex: Fais les horaires de la semaine prochaine..." />
                 <button className="sb-ai-send" onClick={sendToAI} disabled={aiLoading}>Envoyer</button>
               </div>
             </div>
-            <div className="sb-card" style={{padding:'20px'}}>
-              <h3 style={{fontSize:'13px', fontWeight:'700', marginBottom:'14px', color:'#374151'}}>Exemples de commandes</h3>
-              {[
-                'Fais les horaires de cette semaine',
-                '2 employés par shift ce weekend',
-                'Donne un repos à chaque employé',
-                'Saison estivale : renforcé',
-                'Semaine prochaine comme cette semaine',
-              ].map((ex,i) => (
+            <div className="sb-card">
+              <h3 style={{fontSize:'13px', fontWeight:'700', marginBottom:'14px', color:'#374151'}}>Exemples</h3>
+              {['Fais les horaires de cette semaine','2 employés par shift ce weekend','Repos à chaque employé ce weekend','Saison estivale : shifts renforcés','Semaine prochaine identique'].map((ex,i) => (
                 <div key={i} className="sb-ex-item" onClick={()=>setAiMessage(ex)}>{ex}</div>
               ))}
             </div>
@@ -423,15 +419,15 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'18px'}}>
               <div>
                 <h2 style={{fontSize:'16px', fontWeight:'700', marginBottom:'2px'}}>Équipe</h2>
-                <p style={{fontSize:'13px', color:'#9CA3AF'}}>{empEmployees.length} employé{empEmployees.length > 1 ? 's' : ''} actif{empEmployees.length > 1 ? 's' : ''}</p>
+                <p style={{fontSize:'13px', color:'#9CA3AF'}}>{empEmployees.length} employé{empEmployees.length > 1 ? 's' : ''}</p>
               </div>
               <button className="sb-add-btn" onClick={()=>setShowAddEmployee(!showAddEmployee)}>
                 {showAddEmployee ? '✕ Fermer' : '+ Ajouter un employé'}
               </button>
             </div>
             {showAddEmployee && (
-              <div className="sb-add-form" style={{marginBottom:'20px'}}>
-                <h3 style={{fontSize:'14px', fontWeight:'700', marginBottom:'14px', color:'#374151'}}>Nouveau membre</h3>
+              <div className="sb-add-form">
+                <h3 style={{fontSize:'14px', fontWeight:'700', marginBottom:'14px'}}>Nouveau membre</h3>
                 <div className="sb-add-grid">
                   {[['Nom complet', newName, setNewName, 'text', 'Jean Dupont'],['Email', newEmail, setNewEmail, 'email', 'jean@email.com'],['Mot de passe', newPassword, setNewPassword, 'password', '••••••••']].map(([label,val,setter,type,ph]) => (
                     <div key={label} className="sb-field">
@@ -459,16 +455,10 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                       <div style={{fontSize:'14px', fontWeight:'600', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.full_name}</div>
                       <div style={{fontSize:'12px', color:'#9CA3AF', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.email}</div>
                     </div>
-                    <button className="sb-del-btn" onClick={()=>deleteEmployee(emp.id)} title="Supprimer">🗑</button>
+                    <button className="sb-del-btn" onClick={()=>deleteEmployee(emp.id)}>🗑</button>
                   </div>
                 )
               })}
-              {empEmployees.length === 0 && (
-                <div className="sb-empty" style={{gridColumn:'1/-1', background:'white', borderRadius:'16px'}}>
-                  <div className="sb-empty-icon">👥</div>
-                  <div className="sb-empty-text">Aucun employé pour l'instant</div>
-                </div>
-              )}
             </div>
           </div>
         )}
