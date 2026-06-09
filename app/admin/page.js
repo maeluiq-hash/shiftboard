@@ -16,11 +16,15 @@ export default async function AdminPage(props) {
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  const { data: businesses } = await supabase
+  const { data: businesses, error: bizError } = await supabase
     .from('businesses')
     .select('*')
     .eq('owner_id', user.id)
     .order('created_at')
+
+  console.log('USER ID:', user.id)
+  console.log('BUSINESSES:', businesses)
+  console.log('BIZ ERROR:', bizError)
 
   const activeBizId = searchParams?.biz || businesses?.[0]?.id
 
