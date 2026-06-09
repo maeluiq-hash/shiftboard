@@ -59,21 +59,52 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
   const weekLabel = `${monday.getDate()} ${monday.toLocaleString('fr-FR', {month:'long'})} – ${new Date(weekDates[6]).getDate()} ${new Date(weekDates[6]).toLocaleString('fr-FR', {month:'long', year:'numeric'})}`
   const empEmployees = employees.filter(e => e.role === 'employee')
 
-  function getShift(employeeId, date) { return shifts.find(s => s.employee_id === employeeId && s.date === date) }
-  function getEmpWeekShifts(employeeId) { return shifts.filter(s => s.employee_id === employeeId && weekDates.includes(s.date)) }
-  function getDayShifts(date) { return shifts.filter(s => s.date === date && empEmployees.find(e => e.id === s.employee_id)) }
+  function getCellShifts(employeeId, date) {
+    return shifts.filter(s => s.employee_id === employeeId && s.date === date)
+  }
+
+  function getEmpWeekShifts(employeeId) {
+    return shifts.filter(s => s.employee_id === employeeId && weekDates.includes(s.date))
+  }
+
+  function getDayShifts(date) {
+    return shifts.filter(s => s.date === date && empEmployees.find(e => e.id === s.employee_id))
+  }
 
   async function applyShift(option) {
     const { emp, date } = popup
-    setPopup(null)
-    if (option.type === 'repos') {
-      await fetch('/api/delete-shift', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employee_id: emp.id, date }) })
-      setShifts(s => s.filter(x => !(x.employee_id === emp.id && x.date === date)))
-      return
-    }
-    const res = await fetch('/api/save-shift', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employee_id: emp.id, date, shift_type: option.type, start_time: option.start, end_time: option.end }) })
+    const res = await fetch('/api/save-shift', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        employee_id: emp.id,
+        date,
+        shift_type: option.type,
+        start_time: option.start,
+        end_time: option.end
+      })
+    })
     const data = await res.json()
-    if (data.shift) setShifts(s => [...s.filter(x => !(x.employee_id === emp.id && x.date === date)), data.shift])
+    if (data.shift) {
+      setShifts(s => [...s, data.shift])
+      setPopup(prev => prev ? {
+        ...prev,
+        existingShifts: [...(prev.existingShifts || []), data.shift]
+      } : null)
+    }
+  }
+
+  async function deleteShiftById(shiftId) {
+    await fetch('/api/delete-shift-by-id', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ shift_id: shiftId })
+    })
+    setShifts(s => s.filter(x => x.id !== shiftId))
+    setPopup(prev => prev ? {
+      ...prev,
+      existingShifts: (prev.existingShifts || []).filter(s => s.id !== shiftId)
+    } : null)
   }
 
   async function approveEmployee(empId) {
@@ -138,7 +169,6 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         .sb-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #1D9E75, #0F6E56); display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; font-weight: 700; }
         .sb-username { font-size: 13px; font-weight: 500; color: #374151; }
         .sb-logout { padding: 7px 16px; background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 10px; font-size: 13px; color: #6B7280; cursor: pointer; font-weight: 500; }
-        .sb-logout:hover { background: #F3F4F6; }
 
         .sb-pending { background: linear-gradient(135deg, #FFFBEB, #FEF3C7); border: 1px solid #FDE68A; border-radius: 16px; padding: 16px 20px; margin-bottom: 20px; }
         .sb-pending-item { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; background: white; border-radius: 10px; padding: 10px 14px; flex-wrap: wrap; }
@@ -156,7 +186,6 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         .sb-week-lbl { font-size: 14px; font-weight: 600; color: #374151; }
         .sb-today-btn { font-size: 12px; color: #1D9E75; background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 5px 12px; cursor: pointer; font-weight: 600; }
         .sb-week-summary { margin-left: auto; display: flex; align-items: center; gap: 16px; }
-        .sb-week-stat { text-align: center; }
         .sb-week-stat-val { font-size: 16px; font-weight: 700; color: #1D9E75; }
         .sb-week-stat-lbl { font-size: 10px; color: #9CA3AF; font-weight: 500; text-transform: uppercase; letter-spacing: 0.3px; }
 
@@ -167,7 +196,6 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         .sb-gh:last-child { background: #F8FAFC; border-left: 1px solid #F3F4F6; }
         .sb-gh-day { font-size: 10px; font-weight: 700; color: #9CA3AF; text-transform: uppercase; letter-spacing: 0.5px; }
         .sb-gh-date { font-size: 20px; font-weight: 700; color: #374151; line-height: 1.1; margin: 3px 0; }
-        .sb-gh-info { font-size: 10px; color: #9CA3AF; font-weight: 600; }
         .sb-gh.is-today .sb-gh-day { color: #1D9E75; }
         .sb-gh.is-today .sb-gh-date { color: white; background: linear-gradient(135deg, #1D9E75, #0F6E56); border-radius: 50%; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; margin: 3px auto; font-size: 15px; box-shadow: 0 4px 12px rgba(29,158,117,0.3); }
 
@@ -176,23 +204,23 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         .sb-emp-name { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .sb-emp-h { font-size: 10px; color: #9CA3AF; font-weight: 500; }
 
-        .sb-shift-cell { padding: 4px; border-bottom: 1px solid #F9FAFB; border-left: 1px solid #F9FAFB; cursor: pointer; min-height: 60px; display: flex; align-items: center; justify-content: center; transition: background 0.15s; }
+        .sb-shift-cell { padding: 4px; border-bottom: 1px solid #F9FAFB; border-left: 1px solid #F9FAFB; cursor: pointer; min-height: 60px; display: flex; flex-direction: column; align-items: stretch; justify-content: center; gap: 3px; transition: background 0.15s; }
         .sb-shift-cell:hover { background: #F9FAFB; }
-        .sb-shift-block { border-radius: 9px; padding: 5px 7px; width: 100%; border: 1.5px solid transparent; transition: transform 0.15s; }
+        .sb-shift-block { border-radius: 8px; padding: 4px 6px; border: 1.5px solid transparent; transition: transform 0.15s; }
         .sb-shift-block:hover { transform: translateY(-1px); }
-        .sb-shift-time { font-size: 11px; font-weight: 700; }
-        .sb-shift-dur { font-size: 10px; opacity: 0.7; margin-top: 1px; }
-        .sb-cell-plus { color: #D1D5DB; font-size: 20px; transition: color 0.15s; }
+        .sb-shift-time { font-size: 10px; font-weight: 700; }
+        .sb-shift-dur { font-size: 9px; opacity: 0.7; }
+        .sb-cell-plus { color: #D1D5DB; font-size: 20px; text-align: center; transition: color 0.15s; }
         .sb-shift-cell:hover .sb-cell-plus { color: #1D9E75; }
+        .sb-cell-add { font-size: 10px; color: #1D9E75; text-align: center; font-weight: 600; opacity: 0; transition: opacity 0.15s; }
+        .sb-shift-cell:hover .sb-cell-add { opacity: 1; }
 
         .sb-total-cell { padding: 4px 8px; border-bottom: 1px solid #F9FAFB; border-left: 1px solid #F3F4F6; display: flex; align-items: center; justify-content: center; min-height: 60px; background: #FAFAFA; }
         .sb-total-val { font-size: 12px; font-weight: 700; color: #374151; text-align: center; }
         .sb-total-shifts { font-size: 10px; color: #9CA3AF; text-align: center; }
 
-        .sb-day-total-row { display: contents; }
         .sb-day-total-cell { padding: 8px 6px; background: #F8FAFC; border-top: 1.5px solid #E5E7EB; text-align: center; border-left: 1px solid #F3F4F6; }
         .sb-day-total-cell:first-child { text-align: left; padding-left: 18px; border-right: 1px solid #F3F4F6; border-left: none; font-size: 11px; font-weight: 700; color: #6B7280; text-transform: uppercase; letter-spacing: 0.3px; }
-        .sb-day-total-cell:last-child { border-left: 1px solid #F3F4F6; }
         .sb-day-h { font-size: 12px; font-weight: 700; color: #374151; }
         .sb-day-p { font-size: 10px; color: #9CA3AF; font-weight: 500; }
 
@@ -210,22 +238,21 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         .sb-field input:focus { outline: none; border-color: #1D9E75; box-shadow: 0 0 0 3px rgba(29,158,117,0.1); background: white; }
         .sb-add-btn { padding: 9px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(29,158,117,0.25); transition: all 0.2s; }
         .sb-add-btn:hover { transform: translateY(-1px); }
-        .sb-outline-btn { padding: 9px 20px; background: white; color: #374151; border: 1.5px solid #E5E7EB; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+        .sb-outline-btn { padding: 9px 20px; background: white; color: #374151; border: 1.5px solid #E5E7EB; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; }
 
         .sb-ai-wrap { display: grid; grid-template-columns: 1fr; gap: 16px; }
         @media (min-width: 768px) { .sb-ai-wrap { grid-template-columns: 1fr 260px; } }
         .sb-ai-msgs { min-height: 200px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
         .sb-bubble { max-width: 82%; padding: 10px 14px; border-radius: 14px; font-size: 13px; line-height: 1.5; }
-        .sb-bubble-u { background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; align-self: flex-end; box-shadow: 0 4px 12px rgba(29,158,117,0.25); }
+        .sb-bubble-u { background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; align-self: flex-end; }
         .sb-bubble-a { background: #F3F4F6; color: #374151; align-self: flex-start; }
         .sb-ai-row { display: flex; gap: 8px; }
         .sb-ai-input { flex: 1; padding: 10px 14px; border-radius: 12px; border: 1.5px solid #E5E7EB; font-size: 13px; outline: none; color: #111827; background: #FAFAFA; transition: all 0.15s; }
         .sb-ai-input:focus { border-color: #1D9E75; box-shadow: 0 0 0 3px rgba(29,158,117,0.1); background: white; }
-        .sb-ai-send { padding: 10px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 12px; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 12px rgba(29,158,117,0.25); transition: all 0.2s; }
+        .sb-ai-send { padding: 10px 20px; background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border: none; border-radius: 12px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
         .sb-ai-send:hover { transform: translateY(-1px); }
         .sb-ex-item { padding: 10px 12px; border-radius: 10px; border: 1.5px solid #F3F4F6; font-size: 12px; color: #6B7280; cursor: pointer; margin-bottom: 8px; transition: all 0.15s; font-weight: 500; }
         .sb-ex-item:hover { border-color: #1D9E75; color: #1D9E75; transform: translateX(2px); }
-
         .sb-empty { padding: 48px 20px; text-align: center; color: #9CA3AF; font-size: 14px; }
 
         @media (max-width: 640px) {
@@ -237,7 +264,14 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
       `}</style>
 
       <div className="sb-wrap">
-        {popup && <ShiftPopup popup={popup} onClose={() => setPopup(null)} onApply={applyShift} />}
+        {popup && (
+          <ShiftPopup
+            popup={popup}
+            onClose={() => setPopup(null)}
+            onApply={applyShift}
+            onDelete={deleteShiftById}
+          />
+        )}
 
         <nav className="sb-nav">
           <div className="sb-logo">⚡</div>
@@ -284,12 +318,12 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
               <button className="sb-nav-btn" onClick={() => setWeekOffset(w => w+1)}>›</button>
               {weekOffset !== 0 && <button className="sb-today-btn" onClick={() => setWeekOffset(0)}>Aujourd'hui</button>}
               <div className="sb-week-summary">
-                <div className="sb-week-stat">
+                <div>
                   <div className="sb-week-stat-val">{formatHours(totalWeekMins)}</div>
                   <div className="sb-week-stat-lbl">Heures semaine</div>
                 </div>
                 <div style={{width:'1px', height:'30px', background:'#E5E7EB'}}></div>
-                <div className="sb-week-stat">
+                <div>
                   <div className="sb-week-stat-val">{totalWeekShifts}</div>
                   <div className="sb-week-stat-lbl">Shifts total</div>
                 </div>
@@ -302,12 +336,10 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                 </div>
                 {weekDates.map((date, i) => {
                   const isToday = date === today.toISOString().split('T')[0]
-                  const ds = getDayShifts(date)
                   return (
                     <div key={date} className={`sb-gh${isToday?' is-today':''}`}>
                       <div className="sb-gh-day">{DAYS[i]}</div>
                       <div className="sb-gh-date">{new Date(date+'T12:00:00').getDate()}</div>
-                      
                     </div>
                   )
                 })}
@@ -331,14 +363,19 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                         </div>
                       </div>
                       {weekDates.map(date => {
-                        const shift = getShift(emp.id, date)
+                        const cellShifts = getCellShifts(emp.id, date)
                         return (
-                          <div key={date} className="sb-shift-cell" onClick={() => setPopup({emp, date})}>
-                            {shift ? (
-                              <div className="sb-shift-block" style={{background:c.bg, borderColor:c.border}}>
-                                <div className="sb-shift-time" style={{color:c.text}}>{shift.start_time.slice(0,5)} – {shift.end_time.slice(0,5)}</div>
-                                <div className="sb-shift-dur" style={{color:c.text}}>{formatHours(getMins(shift.start_time, shift.end_time))}</div>
-                              </div>
+                          <div key={date} className="sb-shift-cell" onClick={() => setPopup({emp, date, existingShifts: cellShifts})}>
+                            {cellShifts.length > 0 ? (
+                              <>
+                                {cellShifts.map(shift => (
+                                  <div key={shift.id} className="sb-shift-block" style={{background:c.bg, borderColor:c.border}}>
+                                    <div className="sb-shift-time" style={{color:c.text}}>{shift.start_time.slice(0,5)}–{shift.end_time.slice(0,5)}</div>
+                                    <div className="sb-shift-dur" style={{color:c.text}}>{formatHours(getMins(shift.start_time, shift.end_time))}</div>
+                                  </div>
+                                ))}
+                                <div className="sb-cell-add">+ ajouter</div>
+                              </>
                             ) : <span className="sb-cell-plus">+</span>}
                           </div>
                         )
