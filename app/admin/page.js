@@ -2,7 +2,8 @@ import { createClient } from '../../utils/supabase/server'
 import { redirect } from 'next/navigation'
 import AdminClient from './AdminClient'
 
-export default async function AdminPage({ searchParams }) {
+export default async function AdminPage(props) {
+  const searchParams = await props.searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -21,8 +22,7 @@ export default async function AdminPage({ searchParams }) {
     .eq('owner_id', user.id)
     .order('created_at')
 
-  const params = await searchParams
-  const activeBizId = params?.biz || businesses?.[0]?.id
+  const activeBizId = searchParams?.biz || businesses?.[0]?.id
 
   const { data: bizEmployees } = await supabase
     .from('business_employees')
