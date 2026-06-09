@@ -307,7 +307,7 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                     <div key={date} className={`sb-gh${isToday?' is-today':''}`}>
                       <div className="sb-gh-day">{DAYS[i]}</div>
                       <div className="sb-gh-date">{new Date(date+'T12:00:00').getDate()}</div>
-                      {ds.length > 0 && <div className="sb-gh-info">{ds.length}p · {formatHours(getTotalMins(ds))}</div>}
+                      
                     </div>
                   )
                 })}
