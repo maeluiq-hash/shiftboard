@@ -24,13 +24,18 @@ export default async function AdminPage({ searchParams }) {
   const params = await searchParams
   const activeBizId = params?.biz || businesses?.[0]?.id
 
-  const { data: employees } = await supabase
-    .from('profiles')
-    .select('*, business_employees!inner(business_id)')
-    .eq('business_employees.business_id', activeBizId)
-    .order('full_name')
+  const { data: bizEmployees } = await supabase
+    .from('business_employees')
+    .select('employee_id')
+    .eq('business_id', activeBizId)
 
-  const allEmployees = await supabase
+  const employeeIds = bizEmployees?.map(e => e.employee_id) || []
+
+  const { data: employees } = employeeIds.length > 0
+    ? await supabase.from('profiles').select('*').in('id', employeeIds).order('full_name')
+    : { data: [] }
+
+  const { data: allProfiles } = await supabase
     .from('profiles')
     .select('*')
     .order('full_name')
@@ -41,13 +46,13 @@ export default async function AdminPage({ searchParams }) {
     .eq('business_id', activeBizId)
     .order('date')
 
-  const pending = allEmployees.data?.filter(e => e.role === 'pending') || []
+  const pending = allProfiles?.filter(e => e.role === 'pending') || []
 
   return (
     <AdminClient
       profile={profile}
       employees={employees || []}
-      allEmployees={allEmployees.data || []}
+      allEmployees={allProfiles || []}
       shifts={shifts || []}
       pending={pending}
       businesses={businesses || []}
