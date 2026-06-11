@@ -32,7 +32,7 @@ function getTotalMins(shifts) {
   return shifts.reduce((acc, s) => acc + getMins(s.start_time, s.end_time), 0)
 }
 
-export default function AdminClient({ profile, employees, shifts: initialShifts, pending }) {
+export default function AdminClient({ profile, employees, allEmployees, shifts: initialShifts, pending, businesses, activeBizId, allBizEmployees }) {
   const [tab, setTab] = useState('planning')
   const [shifts, setShifts] = useState(initialShifts)
   const [weekOffset, setWeekOffset] = useState(0)
@@ -47,6 +47,9 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
   const [chatHistory, setChatHistory] = useState([])
   const [popup, setPopup] = useState(null)
   const [pendingList, setPendingList] = useState(pending || [])
+  const [showAddBusiness, setShowAddBusiness] = useState(false)
+  const [newBizName, setNewBizName] = useState('')
+  const [bizEmployees, setBizEmployees] = useState(allBizEmployees || [])
 
   const today = new Date()
   const monday = new Date(today)
@@ -71,26 +74,35 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
     return shifts.filter(s => s.date === date && empEmployees.find(e => e.id === s.employee_id))
   }
 
+  function isEmpInBiz(empId, bizId) {
+    return bizEmployees.some(be => be.employee_id === empId && be.business_id === bizId)
+  }
+
+  async function toggleEmpBiz(empId, bizId) {
+    const action = isEmpInBiz(empId, bizId) ? 'remove' : 'add'
+    await fetch('/api/assign-employee', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employee_id: empId, business_id: bizId, action })
+    })
+    if (action === 'add') {
+      setBizEmployees(prev => [...prev, { employee_id: empId, business_id: bizId }])
+    } else {
+      setBizEmployees(prev => prev.filter(be => !(be.employee_id === empId && be.business_id === bizId)))
+    }
+  }
+
   async function applyShift(option) {
     const { emp, date } = popup
     const res = await fetch('/api/save-shift', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        employee_id: emp.id,
-        date,
-        shift_type: option.type,
-        start_time: option.start,
-        end_time: option.end
-      })
+      body: JSON.stringify({ employee_id: emp.id, date, shift_type: option.type, start_time: option.start, end_time: option.end })
     })
     const data = await res.json()
     if (data.shift) {
       setShifts(s => [...s, data.shift])
-      setPopup(prev => prev ? {
-        ...prev,
-        existingShifts: [...(prev.existingShifts || []), data.shift]
-      } : null)
+      setPopup(prev => prev ? { ...prev, existingShifts: [...(prev.existingShifts || []), data.shift] } : null)
     }
   }
 
@@ -101,10 +113,7 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
       body: JSON.stringify({ shift_id: shiftId })
     })
     setShifts(s => s.filter(x => x.id !== shiftId))
-    setPopup(prev => prev ? {
-      ...prev,
-      existingShifts: (prev.existingShifts || []).filter(s => s.id !== shiftId)
-    } : null)
+    setPopup(prev => prev ? { ...prev, existingShifts: (prev.existingShifts || []).filter(s => s.id !== shiftId) } : null)
   }
 
   async function approveEmployee(empId) {
@@ -126,6 +135,16 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
     if (data.error) setMsg('Erreur: ' + data.error)
     else { setMsg('✓ Employé ajouté !'); setNewName(''); setNewEmail(''); setNewPassword(''); setTimeout(() => window.location.reload(), 1000) }
     setLoading(false)
+  }
+
+  async function addBusiness() {
+    if (!newBizName.trim()) return
+    setLoading(true)
+    await fetch('/api/businesses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newBizName }) })
+    setNewBizName('')
+    setShowAddBusiness(false)
+    setLoading(false)
+    window.location.reload()
   }
 
   async function sendToAI() {
@@ -225,11 +244,18 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
         .sb-day-p { font-size: 10px; color: #9CA3AF; font-weight: 500; }
 
         .sb-card { background: white; border-radius: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); padding: 24px; }
-        .sb-emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
-        .sb-emp-card { background: white; border-radius: 16px; padding: 16px; display: flex; align-items: center; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); transition: transform 0.15s; }
+        .sb-emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+        .sb-emp-card { background: white; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); transition: transform 0.15s; }
         .sb-emp-card:hover { transform: translateY(-2px); }
+        .sb-emp-card-top { display: flex; align-items: center; gap: 12px; }
         .sb-emp-card-av { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
         .sb-del-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid #FECACA; background: #FEF2F2; color: #EF4444; cursor: pointer; font-size: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+        .sb-biz-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .sb-biz-tag { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; border: 1.5px solid transparent; transition: all 0.15s; }
+        .sb-biz-tag.active { background: linear-gradient(135deg, #1D9E75, #0F6E56); color: white; border-color: transparent; box-shadow: 0 2px 8px rgba(29,158,117,0.3); }
+        .sb-biz-tag.inactive { background: #F9FAFB; color: #9CA3AF; border-color: #E5E7EB; }
+        .sb-biz-tag.inactive:hover { border-color: #1D9E75; color: #1D9E75; }
+
         .sb-add-form { background: white; border-radius: 16px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); }
         .sb-add-grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-bottom: 16px; }
         @media (min-width: 640px) { .sb-add-grid { grid-template-columns: 1fr 1fr 1fr; } }
@@ -477,7 +503,7 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'18px'}}>
               <div>
                 <h2 style={{fontSize:'16px', fontWeight:'700', marginBottom:'2px'}}>Équipe</h2>
-                <p style={{fontSize:'13px', color:'#9CA3AF'}}>{empEmployees.length} employé{empEmployees.length > 1 ? 's' : ''}</p>
+                <p style={{fontSize:'13px', color:'#9CA3AF'}}>{allEmployees.length} employé{allEmployees.length > 1 ? 's' : ''}</p>
               </div>
               <button className="sb-add-btn" onClick={()=>setShowAddEmployee(!showAddEmployee)}>
                 {showAddEmployee ? '✕ Fermer' : '+ Ajouter un employé'}
@@ -501,19 +527,40 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
                 </div>
               </div>
             )}
+            {businesses.length > 1 && (
+              <div style={{background:'#F0FDF4', border:'1px solid #A7F3D0', borderRadius:'12px', padding:'10px 16px', marginBottom:'16px', fontSize:'12px', color:'#065F46', fontWeight:'500'}}>
+                💡 Clique sur les badges d'établissement pour assigner ou retirer un employé
+              </div>
+            )}
             <div className="sb-emp-grid">
-              {empEmployees.map((emp,ei) => {
+              {allEmployees.map((emp, ei) => {
                 const c = EMP_COLORS[ei % EMP_COLORS.length]
                 return (
                   <div key={emp.id} className="sb-emp-card">
-                    <div className="sb-emp-card-av" style={{background:c.bg, color:c.text, border:`2px solid ${c.border}`}}>
-                      {emp.full_name.split(' ').map(n=>n[0]).join('').slice(0,2)}
+                    <div className="sb-emp-card-top">
+                      <div className="sb-emp-card-av" style={{background:c.bg, color:c.text, border:`2px solid ${c.border}`}}>
+                        {emp.full_name.split(' ').map(n=>n[0]).join('').slice(0,2)}
+                      </div>
+                      <div style={{flex:1, minWidth:0}}>
+                        <div style={{fontSize:'14px', fontWeight:'600', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.full_name}</div>
+                        <div style={{fontSize:'12px', color:'#9CA3AF', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.email}</div>
+                      </div>
+                      <button className="sb-del-btn" onClick={()=>deleteEmployee(emp.id)}>🗑</button>
                     </div>
-                    <div style={{flex:1, minWidth:0}}>
-                      <div style={{fontSize:'14px', fontWeight:'600', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.full_name}</div>
-                      <div style={{fontSize:'12px', color:'#9CA3AF', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis'}}>{emp.email}</div>
-                    </div>
-                    <button className="sb-del-btn" onClick={()=>deleteEmployee(emp.id)}>🗑</button>
+                    {businesses.length > 0 && (
+                      <div className="sb-biz-tags">
+                        {businesses.map(biz => (
+                          <button
+                            key={biz.id}
+                            className={`sb-biz-tag ${isEmpInBiz(emp.id, biz.id) ? 'active' : 'inactive'}`}
+                            onClick={() => toggleEmpBiz(emp.id, biz.id)}
+                            title={isEmpInBiz(emp.id, biz.id) ? `Retirer de ${biz.name}` : `Ajouter à ${biz.name}`}
+                          >
+                            {isEmpInBiz(emp.id, biz.id) ? '✓' : '+'} {biz.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}

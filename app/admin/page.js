@@ -16,15 +16,11 @@ export default async function AdminPage(props) {
 
   if (profile?.role !== 'admin') redirect('/dashboard')
 
-  const { data: businesses, error: bizError } = await supabase
+  const { data: businesses } = await supabase
     .from('businesses')
     .select('*')
     .eq('owner_id', user.id)
     .order('created_at')
-
-  console.log('USER ID:', user.id)
-  console.log('BUSINESSES:', businesses)
-  console.log('BIZ ERROR:', bizError)
 
   const activeBizId = searchParams?.biz || businesses?.[0]?.id
 
@@ -50,17 +46,24 @@ export default async function AdminPage(props) {
     .eq('business_id', activeBizId)
     .order('date')
 
+  // Tous les liens employé <-> établissement pour cet admin
+  const allBizIds = businesses?.map(b => b.id) || []
+  const { data: allBizEmployees } = allBizIds.length > 0
+    ? await supabase.from('business_employees').select('*').in('business_id', allBizIds)
+    : { data: [] }
+
   const pending = allProfiles?.filter(e => e.role === 'pending') || []
 
   return (
     <AdminClient
       profile={profile}
       employees={employees || []}
-      allEmployees={allProfiles || []}
+      allEmployees={allProfiles?.filter(e => e.role === 'employee') || []}
       shifts={shifts || []}
       pending={pending}
       businesses={businesses || []}
       activeBizId={activeBizId}
+      allBizEmployees={allBizEmployees || []}
     />
   )
 }

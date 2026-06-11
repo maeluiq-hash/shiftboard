@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 
-export default function DashboardClient({ profile, shifts, allShifts, employees }) {
+export default function DashboardClient({ profile, shifts, allShifts, employees, myBusinesses, activeBizId }) {
   const [weekOffset, setWeekOffset] = useState(0)
   const [view, setView] = useState('mes-shifts')
   const [calCopied, setCalCopied] = useState(false)
@@ -164,6 +164,14 @@ export default function DashboardClient({ profile, shifts, allShifts, employees 
             </form>
           </div>
         </nav>
+
+        {myBusinesses && myBusinesses.length > 1 && (
+          <div style={{display:"flex", gap:"8px", marginBottom:"16px", flexWrap:"wrap"}}>
+            {myBusinesses.map(biz => (
+              <button key={biz.id} onClick={() => window.location.href = `/dashboard?biz=${biz.id}`} style={{padding:"7px 16px", borderRadius:"12px", border: biz.id === activeBizId ? "none" : "1.5px solid #E5E7EB", background: biz.id === activeBizId ? "linear-gradient(135deg, #1D9E75, #0F6E56)" : "white", color: biz.id === activeBizId ? "white" : "#6B7280", fontSize:"13px", fontWeight:"600", cursor:"pointer"}}>🏠 {biz.name}</button>
+            ))}
+          </div>
+        )}
 
         {nextShift && weekOffset === 0 && view === 'mes-shifts' && (
           <div className="emp-hero">
