@@ -7,7 +7,7 @@ export async function POST(request) {
     if (!user) return Response.json({ error: 'Non autorisé' }, { status: 401 })
 
     const { message, employees, business_id } = await request.json()
-    const employeeList = employees.map(e => `${e.full_name} (id: ${e.id})`).join(', ')
+    const employeeList = employees.map(e => `- ${e.full_name} (employee_id: "${e.id}")`).join('\n')
 
     const { data: settingsData } = await supabase.from('settings').select('*')
     const settings = {}
@@ -17,23 +17,31 @@ export async function POST(request) {
     const businessContext = settings[`business_context_${biz}`] || settings.business_context || ''
     const openingHours = settings[`opening_hours_${biz}`] || settings.opening_hours || ''
 
-    const prompt = `Tu es un assistant de planification pour un restaurant/bar.
-Tu dois générer des horaires de travail en JSON.
-Employés disponibles: ${employeeList}
-${openingHours ? `Horaires d'ouverture du bar:\n${openingHours}` : ''}
-${businessContext ? `Informations sur l'établissement:\n${businessContext}` : ''}
-Règles:
+    const today = new Date().toISOString().split('T')[0]
+
+    const prompt = `Tu es un assistant de planification pour un bar/restaurant.
+AUJOURD'HUI: ${today}
+
+EMPLOYÉS (tu DOIS créer des shifts pour CHACUN d'eux):
+${employeeList}
+
+${openingHours ? `HORAIRES D'OUVERTURE:\n${openingHours}` : ''}
+${businessContext ? `CONTEXTE:\n${businessContext}` : ''}
+
+RÈGLES OBLIGATOIRES:
+- Crée des shifts pour TOUS les employés listés ci-dessus, sans exception
+- Chaque employé doit avoir au minimum 3 shifts dans la semaine
 - shift_type: "matin", "soir", ou "coupure"
 - start_time et end_time au format "HH:MM:SS"
 - date au format "YYYY-MM-DD"
-- Utilise exactement les IDs fournis pour employee_id
-- Adapte les shifts aux horaires d'ouverture si fournis
-- Réponds UNIQUEMENT avec un JSON valide, sans texte avant ou après, sans backticks
+- Utilise EXACTEMENT les employee_id fournis ci-dessus, copie-les mot pour mot
+- 2 jours de repos minimum par employé
+- Réponds UNIQUEMENT avec un JSON valide, zéro texte avant ou après, zéro backticks
 
-Format exact:
-{"message":"explication courte","shifts":[{"employee_id":"uuid-ici","date":"2026-06-09","shift_type":"matin","start_time":"07:00:00","end_time":"15:00:00"}]}
+FORMAT JSON EXACT:
+{"message":"résumé court","shifts":[{"employee_id":"COPIE_EXACTE_ID","date":"YYYY-MM-DD","shift_type":"matin","start_time":"HH:MM:SS","end_time":"HH:MM:SS"}]}
 
-Demande: ${message}`
+DEMANDE: ${message}`
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -44,7 +52,7 @@ Demande: ${message}`
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        max_tokens: 4000,
         messages: [{ role: 'user', content: prompt }]
       })
     })
@@ -57,7 +65,7 @@ Demande: ${message}`
     const aiData = await response.json()
     const text = aiData.content[0].text.trim()
     const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return Response.json({ error: 'Réponse IA invalide' }, { status: 500 })
+    if (!jsonMatch) return Response.json({ error: 'Réponse IA invalide: ' + text }, { status: 500 })
 
     const parsed = JSON.parse(jsonMatch[0])
 
