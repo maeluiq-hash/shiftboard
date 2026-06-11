@@ -14,9 +14,10 @@ function parseOpeningHours(text) {
     if (!timeMatch) continue
     const open = parseInt(timeMatch[1]) * 60 + parseInt(timeMatch[2] || 0)
     const close = parseInt(timeMatch[3]) * 60 + parseInt(timeMatch[4] || 0)
+    const closeAdj = close <= open ? close + 24*60 : close
     for (const [key, days] of Object.entries(dayMap)) {
       if (line.includes(key)) {
-        for (const d of days) result[d] = { open, close: close <= open ? close + 24*60 : close }
+        for (const d of days) result[d] = { open, close: closeAdj }
       }
     }
   }
@@ -53,12 +54,11 @@ function getWeekDates(offset = 0) {
   })
 }
 
-function parseConstraints(message, businessContext, employees) {
-  const text = (message + '\n' + businessContext).toLowerCase()
+function parseConstraints(message, employees) {
   const empConstraints = {}
   for (const emp of employees) {
     const firstName = emp.full_name.split(' ')[0].toLowerCase()
-    const match = text.match(new RegExp(`${firstName}[^.\\n]*?(\\d+)\\s*h`, 'i'))
+    const match = message.toLowerCase().match(new RegExp(`${firstName}[^.\\n]*?(\\d+)\\s*h`, 'i'))
     if (match) empConstraints[emp.id] = { maxHours: parseInt(match[1]) }
   }
   return empConstraints
@@ -67,16 +67,15 @@ function parseConstraints(message, businessContext, employees) {
 function generateSchedule(employees, weekDates, openingHours, constraints) {
   const shifts = []
   const empWorkDays = {}
-  const empTotalHours = {}
-  const empRotation = {}
+  const empTotalMins = {}
   const MAX_WORK_DAYS = 5
 
-  employees.forEach((emp, idx) => {
+  employees.forEach(emp => {
     empWorkDays[emp.id] = 0
-    empTotalHours[emp.id] = 0
-    empRotation[emp.id] = idx % 2 === 0 ? 'matin' : 'soir'
+    empTotalMins[emp.id] = 0
   })
 
+  // Pour chaque jour, on crée les slots et on les remplit
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
     const date = weekDates[dayIdx]
     const hours = openingHours[dayIdx]
@@ -87,55 +86,85 @@ function generateSchedule(employees, weekDates, openingHours, constraints) {
     const isSaturday = dayIdx === 5
     const isLateClose = close > 22 * 60
 
-    const splitPoint = Math.min(open + Math.ceil(totalMins * 0.55), 17 * 60)
-    const morningSlot = { start: open, end: splitPoint, type: 'matin', mins: splitPoint - open }
-    const eveningSlot = { start: splitPoint, end: close, type: 'soir', mins: close - splitPoint }
+    // Arrondir le split à l'heure la plus proche
+    const rawSplit = open + Math.round(totalMins * 0.55 / 60) * 60
+    const splitPoint = Math.min(rawSplit, 17 * 60)
 
-    const available = employees.filter(emp => {
-      if (empWorkDays[emp.id] >= MAX_WORK_DAYS) return false
-      const maxH = constraints[emp.id]?.maxHours
-      if (maxH && empTotalHours[emp.id] >= maxH) return false
-      return true
-    })
-    if (available.length === 0) continue
+    // Slots de la journée
+    const slots = [
+      { start: open, end: splitPoint, type: 'matin', needed: isSaturday ? 2 : 1 },
+      { start: splitPoint, end: close, type: 'soir', needed: isLateClose ? 2 : 1 }
+    ]
 
-    const morningFirst = available.filter(e => empRotation[e.id] === 'matin')
-    const eveningFirst = available.filter(e => empRotation[e.id] === 'soir')
-    const assigned = new Set()
+    // Employés disponibles triés par nb de jours travaillés (moins = priorité)
+    const getAvailable = () => employees
+      .filter(emp => {
+        if (empWorkDays[emp.id] >= MAX_WORK_DAYS) return false
+        const maxH = constraints[emp.id]?.maxHours
+        if (maxH && empTotalMins[emp.id] / 60 >= maxH) return false
+        return true
+      })
+      .sort((a, b) => empWorkDays[a.id] - empWorkDays[b.id])
 
-    // MATIN
-    const morningNeeded = isSaturday ? 2 : 1
-    for (const emp of [...morningFirst, ...eveningFirst]) {
-      if (assigned.size >= morningNeeded + (isLateClose ? 1 : 0)) break
-      if (assigned.has(emp.id)) continue
-      const maxH = constraints[emp.id]?.maxHours
-      if (maxH && empTotalHours[emp.id] + morningSlot.mins / 60 > maxH) continue
-      if (assigned.size < morningNeeded) {
-        shifts.push({ employee_id: emp.id, date, shift_type: 'matin', start_time: minsToTime(morningSlot.start), end_time: minsToTime(morningSlot.end) })
-        empTotalHours[emp.id] += morningSlot.mins / 60
-        assigned.add(emp.id)
+    const dayAssigned = new Set()
+
+    for (const slot of slots) {
+      const slotMins = slot.end - slot.start
+      let assigned = 0
+
+      // D'abord les employés qui ne travaillent pas encore ce jour
+      const candidates = getAvailable().sort((a, b) => {
+        const aWorking = dayAssigned.has(a.id) ? 1 : 0
+        const bWorking = dayAssigned.has(b.id) ? 1 : 0
+        return aWorking - bWorking || empWorkDays[a.id] - empWorkDays[b.id]
+      })
+
+      for (const emp of candidates) {
+        if (assigned >= slot.needed) break
+        // Éviter de mettre quelqu'un sur 2 slots le même jour sauf si nécessaire
+        if (dayAssigned.has(emp.id) && assigned === 0 && candidates.filter(e => !dayAssigned.has(e.id)).length > 0) continue
+        
+        const maxH = constraints[emp.id]?.maxHours
+        if (maxH && (empTotalMins[emp.id] + slotMins) / 60 > maxH) continue
+
+        shifts.push({
+          employee_id: emp.id,
+          date,
+          shift_type: slot.type,
+          start_time: minsToTime(slot.start),
+          end_time: minsToTime(slot.end % (24*60))
+        })
+        empTotalMins[emp.id] += slotMins
+        dayAssigned.add(emp.id)
+        assigned++
+      }
+
+      // Si on n'a pas assez de monde, on force avec ceux qui travaillent déjà
+      if (assigned < slot.needed) {
+        const remaining = getAvailable().filter(e => !dayAssigned.has(e.id) || assigned < 1)
+        for (const emp of remaining) {
+          if (assigned >= slot.needed) break
+          if (dayAssigned.has(emp.id)) continue
+          shifts.push({
+            employee_id: emp.id,
+            date,
+            shift_type: slot.type,
+            start_time: minsToTime(slot.start),
+            end_time: minsToTime(slot.end % (24*60))
+          })
+          empTotalMins[emp.id] += slotMins
+          dayAssigned.add(emp.id)
+          assigned++
+        }
       }
     }
 
-    // SOIR
-    const eveningNeeded = isLateClose ? 2 : 1
-    for (const emp of [...eveningFirst, ...morningFirst]) {
-      if (assigned.has(emp.id)) continue
-      const maxH = constraints[emp.id]?.maxHours
-      if (maxH && empTotalHours[emp.id] + eveningSlot.mins / 60 > maxH) continue
-      shifts.push({ employee_id: emp.id, date, shift_type: 'soir', start_time: minsToTime(eveningSlot.start), end_time: minsToTime(eveningSlot.end % (24*60)) })
-      empTotalHours[emp.id] += eveningSlot.mins / 60
-      assigned.add(emp.id)
-      if (assigned.size >= morningNeeded + eveningNeeded) break
-    }
-
-    for (const emp of employees) {
-      if (assigned.has(emp.id)) {
-        empWorkDays[emp.id]++
-        empRotation[emp.id] = empRotation[emp.id] === 'matin' ? 'soir' : 'matin'
-      }
+    // Mettre à jour les jours travaillés
+    for (const empId of dayAssigned) {
+      empWorkDays[empId]++
     }
   }
+
   return shifts
 }
 
@@ -152,13 +181,11 @@ export async function POST(request) {
     settingsData?.forEach(row => { settings[row.key] = row.value })
 
     const biz = business_id || 'default'
-    const businessContext = settings[`business_context_${biz}`] || settings.business_context || ''
     const openingHoursText = settings[`opening_hours_${biz}`] || settings.opening_hours || ''
     const openingHours = parseOpeningHours(openingHoursText)
 
     const today = new Date().toISOString().split('T')[0]
 
-    // IA détecte l'intention ET la date précise si mentionnée
     const intentRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -170,15 +197,10 @@ export async function POST(request) {
         model: 'claude-sonnet-4-20250514',
         max_tokens: 150,
         messages: [{ role: 'user', content: `Aujourd'hui: ${today}
-Analyse cette demande et réponds UNIQUEMENT avec un JSON.
-Si une date précise est mentionnée (ex: "13 juillet", "semaine du 20"), utilise target_date avec le format YYYY-MM-DD du lundi de cette semaine.
-Sinon utilise week_offset (0=cette semaine, 1=prochaine, -1=dernière).
-
-{"action":"create","week_offset":0} OU
-{"action":"create","target_date":"2026-07-13"} OU  
-{"action":"delete","week_offset":0} OU
-{"action":"delete","target_date":"2026-07-13"}
-
+Réponds UNIQUEMENT avec un JSON.
+Si date précise mentionnée: {"action":"create","target_date":"YYYY-MM-DD"} (lundi de la semaine)
+Sinon: {"action":"create","week_offset":0} (0=cette semaine, 1=prochaine, -1=dernière)
+Pour suppression: même format avec "delete"
 Demande: "${message}"` }]
       })
     })
@@ -188,13 +210,9 @@ Demande: "${message}"` }]
     const intentMatch = intentText.match(/\{[\s\S]*\}/)
     const intent = intentMatch ? JSON.parse(intentMatch[0]) : { action: 'create', week_offset: 0 }
 
-    // Calculer les dates de la semaine
-    let weekDates
-    if (intent.target_date) {
-      weekDates = getWeekDatesFromDate(intent.target_date)
-    } else {
-      weekDates = getWeekDates(intent.week_offset || 0)
-    }
+    const weekDates = intent.target_date
+      ? getWeekDatesFromDate(intent.target_date)
+      : getWeekDates(intent.week_offset || 0)
 
     if (intent.action === 'delete') {
       await supabase.from('shifts').delete()
@@ -205,7 +223,7 @@ Demande: "${message}"` }]
       return Response.json({ success: true, message: `Horaires supprimés du ${weekDates[0]} au ${weekDates[6]}`, count: 0 })
     }
 
-    const constraints = parseConstraints(message, businessContext, employees)
+    const constraints = parseConstraints(message, employees)
     const generatedShifts = generateSchedule(employees, weekDates, openingHours, constraints)
 
     await supabase.from('shifts').delete()
