@@ -1,5 +1,173 @@
 import { createClient } from '../../../utils/supabase/server'
 
+function parseOpeningHours(text) {
+  const days = { 'lundi': 0, 'mardi': 1, 'mercredi': 2, 'jeudi': 3, 'vendredi': 4, 'samedi': 5, 'dimanche': 6 }
+  const result = {}
+  const lines = text.toLowerCase().split('\n').filter(l => l.trim())
+  for (const line of lines) {
+    const timeMatch = line.match(/(\d{1,2})h(\d{0,2})\s*[-–]\s*(\d{1,2})h(\d{0,2})/)
+    if (!timeMatch) continue
+    const open = `${timeMatch[1].padStart(2,'0')}:${(timeMatch[2]||'00').padStart(2,'0')}:00`
+    const close = `${timeMatch[3].padStart(2,'0')}:${(timeMatch[4]||'00').padStart(2,'0')}:00`
+    for (const [dayName, dayIdx] of Object.entries(days)) {
+      if (line.includes(dayName)) result[dayIdx] = { open, close }
+    }
+    if (line.includes('lundi') && line.includes('mercredi')) {
+      result[0] = { open, close }; result[1] = { open, close }; result[2] = { open, close }
+    }
+    if (line.includes('lundi') && line.includes('vendredi')) {
+      for (let i = 0; i <= 4; i++) result[i] = { open, close }
+    }
+  }
+  return result
+}
+
+function getWeekDates(offsetFromToday = 0) {
+  const today = new Date()
+  const dayOfWeek = (today.getDay() + 6) % 7
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - dayOfWeek + offsetFromToday * 7)
+  return Array.from({length: 7}, (_, i) => {
+    const d = new Date(monday)
+    d.setDate(monday.getDate() + i)
+    return d.toISOString().split('T')[0]
+  })
+}
+
+function timeToMins(t) {
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function minsToTime(m) {
+  const h = Math.floor(m / 60) % 24
+  const min = m % 60
+  return `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:00`
+}
+
+function generateSchedule(employees, weekDates, openingHours, constraints) {
+  const shifts = []
+  const empWorkDays = {}
+  const empHours = {}
+  const empLastSlot = {}
+  
+  for (const emp of employees) {
+    empWorkDays[emp.id] = 0
+    empHours[emp.id] = 0
+    empLastSlot[emp.id] = null
+  }
+
+  // Parse disponibilités spéciales depuis constraints
+  const empMaxHours = {}
+  for (const emp of employees) {
+    const nameMatch = constraints.match(new RegExp(`${emp.full_name.split(' ')[0]}[^\\n]*?(\\d+)h`, 'i'))
+    if (nameMatch) empMaxHours[emp.id] = parseInt(nameMatch[1])
+  }
+
+  const maxWorkDays = 5 // 2 jours de repos minimum
+
+  for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+    const date = weekDates[dayIdx]
+    const dayHours = openingHours[dayIdx]
+    if (!dayHours) continue
+
+    const openMins = timeToMins(dayHours.open)
+    let closeMins = timeToMins(dayHours.close)
+    if (closeMins <= openMins) closeMins += 24 * 60 // après minuit
+
+    const totalMins = closeMins - openMins
+    const isSaturday = dayIdx === 5
+    const isLateNight = closeMins > 22 * 60 // fermeture après 22h
+
+    // Créer les créneaux de la journée
+    const slots = []
+    if (totalMins <= 8 * 60) {
+      slots.push({ start: openMins, end: closeMins, type: openMins < 14 * 60 ? 'matin' : 'soir' })
+    } else {
+      const mid = openMins + Math.floor(totalMins / 2)
+      slots.push({ start: openMins, end: mid, type: 'matin' })
+      slots.push({ start: mid, end: closeMins, type: 'soir' })
+    }
+
+    // Employés disponibles ce jour
+    const available = employees.filter(emp => {
+      if (empWorkDays[emp.id] >= maxWorkDays) return false
+      if (empMaxHours[emp.id] && empHours[emp.id] >= empMaxHours[emp.id]) return false
+      return true
+    })
+
+    if (available.length === 0) continue
+
+    // Assigner les slots
+    for (let slotIdx = 0; slotIdx < slots.length; slotIdx++) {
+      const slot = slots[slotIdx]
+      const slotMins = slot.end - slot.start
+      const slotKey = `${slot.start}-${slot.end}`
+
+      // Nombre d'employés requis pour ce slot
+      let required = 1
+      if (isSaturday) required = 2
+      if (isLateNight && slotIdx === slots.length - 1) required = Math.min(2, available.length)
+
+      // Trier les employés par rotation (ceux qui ont fait ce slot récemment passent en dernier)
+      const sorted = [...available].sort((a, b) => {
+        const aLast = empLastSlot[a.id] === slotKey ? 1 : 0
+        const bLast = empLastSlot[b.id] === slotKey ? 1 : 0
+        const aHours = empHours[a.id]
+        const bHours = empHours[b.id]
+        return (aLast - bLast) || (aHours - bHours)
+      })
+
+      let assigned = 0
+      for (const emp of sorted) {
+        if (assigned >= required) break
+        if (empWorkDays[emp.id] >= maxWorkDays) continue
+        if (empMaxHours[emp.id] && empHours[emp.id] + slotMins / 60 > empMaxHours[emp.id]) continue
+
+        const startTime = minsToTime(slot.start % (24 * 60))
+        const endTime = minsToTime(slot.end % (24 * 60))
+
+        shifts.push({
+          employee_id: emp.id,
+          date,
+          shift_type: slot.type,
+          start_time: startTime,
+          end_time: endTime,
+          business_id: null
+        })
+
+        empHours[emp.id] += slotMins / 60
+        empLastSlot[emp.id] = slotKey
+        assigned++
+      }
+
+      // Si pas assez d'employés assignés et qu'il y en a avec max dépassé, on les force
+      if (assigned < 1) {
+        const forced = employees.find(e => !shifts.some(s => s.employee_id === e.id && s.date === date))
+        if (forced) {
+          shifts.push({
+            employee_id: forced.id,
+            date,
+            shift_type: slot.type,
+            start_time: minsToTime(slot.start % (24 * 60)),
+            end_time: minsToTime(slot.end % (24 * 60)),
+            business_id: null
+          })
+        }
+      }
+    }
+
+    // Incrémenter jours travaillés
+    for (const emp of employees) {
+      if (shifts.some(s => s.employee_id === emp.id && s.date === date)) {
+        empWorkDays[emp.id]++
+      }
+    }
+  }
+
+  return shifts
+}
+
 export async function POST(request) {
   try {
     const supabase = await createClient()
@@ -7,7 +175,6 @@ export async function POST(request) {
     if (!user) return Response.json({ error: 'Non autorisé' }, { status: 401 })
 
     const { message, employees, business_id } = await request.json()
-    const employeeList = employees.map(e => `- ${e.full_name} (employee_id: "${e.id}")`).join('\n')
 
     const { data: settingsData } = await supabase.from('settings').select('*')
     const settings = {}
@@ -15,43 +182,17 @@ export async function POST(request) {
 
     const biz = business_id || 'default'
     const businessContext = settings[`business_context_${biz}`] || settings.business_context || ''
-    const openingHours = settings[`opening_hours_${biz}`] || settings.opening_hours || ''
+    const openingHoursText = settings[`opening_hours_${biz}`] || settings.opening_hours || ''
 
-    const today = new Date().toISOString().split('T')[0]
+    // Utiliser l'IA uniquement pour comprendre l'intention
+    const intentPrompt = `Analyse cette demande et réponds UNIQUEMENT avec un JSON:
+{"action":"create","week_offset":0} si on veut créer les horaires (0=cette semaine, 1=semaine prochaine, -1=semaine dernière)
+{"action":"delete","week_offset":0} si on veut supprimer les horaires
 
-    const prompt = `Tu es un logiciel de planification automatique pour un bar/restaurant.
-AUJOURD'HUI: ${today}
+Demande: "${message}"
+Réponds uniquement avec le JSON, rien d'autre.`
 
-EMPLOYÉS (crée des shifts pour CHACUN sans exception):
-${employeeList}
-
-HORAIRES D'OUVERTURE DU BAR (les shifts doivent être DANS ces plages):
-${openingHours}
-
-RÈGLES STRICTES DE L'ÉTABLISSEMENT (tu DOIS les respecter à la lettre):
-${businessContext}
-
-CONTRAINTES TECHNIQUES OBLIGATOIRES:
-1. Crée des shifts pour TOUS les employés listés
-2. Chaque shift doit être DANS les horaires d'ouverture du bar
-3. Un shift ne peut pas dépasser 8h maximum
-4. Minimum 2 jours de repos par employé sur la semaine
-5. shift_type: "matin" si shift finit avant 17h, "soir" si shift commence après 15h, "coupure" sinon
-6. start_time et end_time au format "HH:MM:SS"
-7. date au format "YYYY-MM-DD"
-8. Copie les employee_id EXACTEMENT comme fournis ci-dessus
-9. Pour les shifts qui finissent après minuit (ex: 03h), utilise "03:00:00" comme end_time
-10. Réponds UNIQUEMENT avec du JSON valide, zéro texte, zéro backticks
-
-SI LA DEMANDE EST UNE SUPPRESSION:
-{"action":"delete","message":"résumé","date_from":"YYYY-MM-DD","date_to":"YYYY-MM-DD"}
-
-SI LA DEMANDE EST UNE CRÉATION:
-{"action":"create","message":"résumé","shifts":[{"employee_id":"ID_EXACT","date":"YYYY-MM-DD","shift_type":"matin","start_time":"HH:MM:SS","end_time":"HH:MM:SS"}]}
-
-DEMANDE: ${message}`
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const intentRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -60,58 +201,45 @@ DEMANDE: ${message}`
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        messages: [{ role: 'user', content: prompt }]
+        max_tokens: 100,
+        messages: [{ role: 'user', content: intentPrompt }]
       })
     })
 
-    if (!response.ok) {
-      const err = await response.text()
-      return Response.json({ error: 'Erreur API: ' + err }, { status: 500 })
-    }
+    const intentData = await intentRes.json()
+    const intentText = intentData.content[0].text.trim()
+    const intentMatch = intentText.match(/\{[\s\S]*\}/)
+    const intent = intentMatch ? JSON.parse(intentMatch[0]) : { action: 'create', week_offset: 0 }
 
-    const aiData = await response.json()
-    const text = aiData.content[0].text.trim()
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return Response.json({ error: 'Réponse IA invalide: ' + text }, { status: 500 })
+    const weekDates = getWeekDates(intent.week_offset || 0)
+    const openingHours = parseOpeningHours(openingHoursText)
 
-    const parsed = JSON.parse(jsonMatch[0])
-
-    if (parsed.action === 'delete') {
-      await supabase.from('shifts')
-        .delete()
+    if (intent.action === 'delete') {
+      await supabase.from('shifts').delete()
         .eq('business_id', business_id)
         .in('employee_id', employees.map(e => e.id))
-        .gte('date', parsed.date_from)
-        .lte('date', parsed.date_to)
-      return Response.json({ success: true, message: parsed.message, count: 0 })
+        .gte('date', weekDates[0])
+        .lte('date', weekDates[6])
+      return Response.json({ success: true, message: 'Horaires supprimés', count: 0 })
     }
 
-    if (parsed.action === 'create' || parsed.shifts) {
-      if (business_id) {
-        await supabase.from('shifts').delete()
-          .eq('business_id', business_id)
-          .in('employee_id', employees.map(e => e.id))
-          .gte('date', parsed.shifts[0]?.date || '2026-01-01')
-          .lte('date', parsed.shifts[parsed.shifts.length-1]?.date || '2099-01-01')
-      }
+    // Générer les shifts avec l'algorithme
+    const generatedShifts = generateSchedule(employees, weekDates, openingHours, businessContext + '\n' + message)
 
-      const { error: insertError } = await supabase.from('shifts').insert(
-        parsed.shifts.map(s => ({
-          employee_id: s.employee_id,
-          date: s.date,
-          shift_type: s.shift_type,
-          start_time: s.start_time,
-          end_time: s.end_time,
-          business_id: business_id || null
-        }))
-      )
+    // Supprimer les anciens shifts de la semaine
+    await supabase.from('shifts').delete()
+      .eq('business_id', business_id)
+      .in('employee_id', employees.map(e => e.id))
+      .gte('date', weekDates[0])
+      .lte('date', weekDates[6])
 
-      if (insertError) return Response.json({ error: insertError.message }, { status: 500 })
-      return Response.json({ success: true, message: parsed.message, count: parsed.shifts.length })
-    }
+    // Insérer les nouveaux
+    const shiftsToInsert = generatedShifts.map(s => ({ ...s, business_id: business_id || null }))
+    const { error: insertError } = await supabase.from('shifts').insert(shiftsToInsert)
+    if (insertError) return Response.json({ error: insertError.message }, { status: 500 })
 
-    return Response.json({ error: 'Action non reconnue' }, { status: 400 })
+    return Response.json({ success: true, message: `Planning généré : ${shiftsToInsert.length} shifts créés`, count: shiftsToInsert.length })
+
   } catch (e) {
     return Response.json({ error: e.message }, { status: 500 })
   }
