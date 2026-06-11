@@ -19,31 +19,35 @@ export async function POST(request) {
 
     const today = new Date().toISOString().split('T')[0]
 
-    const prompt = `Tu es un assistant de planification pour un bar/restaurant.
+    const prompt = `Tu es un logiciel de planification automatique pour un bar/restaurant.
 AUJOURD'HUI: ${today}
 
-EMPLOYÉS:
+EMPLOYÉS (crée des shifts pour CHACUN sans exception):
 ${employeeList}
 
-${openingHours ? `HORAIRES D'OUVERTURE:\n${openingHours}` : ''}
-${businessContext ? `CONTEXTE:\n${businessContext}` : ''}
+HORAIRES D'OUVERTURE DU BAR (les shifts doivent être DANS ces plages):
+${openingHours}
 
-RÈGLES OBLIGATOIRES:
-- Si la demande est de SUPPRIMER ou EFFACER des horaires, réponds avec action "delete" et une plage de dates
-- Si la demande est de CRÉER des horaires, crée des shifts pour TOUS les employés sans exception
-- Chaque employé doit avoir au minimum 3 shifts dans la semaine
-- shift_type: "matin", "soir", ou "coupure"
-- start_time et end_time au format "HH:MM:SS"
-- date au format "YYYY-MM-DD"
-- Utilise EXACTEMENT les employee_id fournis ci-dessus
-- 2 jours de repos minimum par employé
-- Réponds UNIQUEMENT avec un JSON valide, zéro texte avant ou après, zéro backticks
+RÈGLES STRICTES DE L'ÉTABLISSEMENT (tu DOIS les respecter à la lettre):
+${businessContext}
 
-FORMAT JSON POUR CRÉER:
-{"action":"create","message":"résumé court","shifts":[{"employee_id":"ID_EXACT","date":"YYYY-MM-DD","shift_type":"matin","start_time":"HH:MM:SS","end_time":"HH:MM:SS"}]}
+CONTRAINTES TECHNIQUES OBLIGATOIRES:
+1. Crée des shifts pour TOUS les employés listés
+2. Chaque shift doit être DANS les horaires d'ouverture du bar
+3. Un shift ne peut pas dépasser 8h maximum
+4. Minimum 2 jours de repos par employé sur la semaine
+5. shift_type: "matin" si shift finit avant 17h, "soir" si shift commence après 15h, "coupure" sinon
+6. start_time et end_time au format "HH:MM:SS"
+7. date au format "YYYY-MM-DD"
+8. Copie les employee_id EXACTEMENT comme fournis ci-dessus
+9. Pour les shifts qui finissent après minuit (ex: 03h), utilise "03:00:00" comme end_time
+10. Réponds UNIQUEMENT avec du JSON valide, zéro texte, zéro backticks
 
-FORMAT JSON POUR SUPPRIMER:
-{"action":"delete","message":"résumé court","date_from":"YYYY-MM-DD","date_to":"YYYY-MM-DD"}
+SI LA DEMANDE EST UNE SUPPRESSION:
+{"action":"delete","message":"résumé","date_from":"YYYY-MM-DD","date_to":"YYYY-MM-DD"}
+
+SI LA DEMANDE EST UNE CRÉATION:
+{"action":"create","message":"résumé","shifts":[{"employee_id":"ID_EXACT","date":"YYYY-MM-DD","shift_type":"matin","start_time":"HH:MM:SS","end_time":"HH:MM:SS"}]}
 
 DEMANDE: ${message}`
 
@@ -74,14 +78,12 @@ DEMANDE: ${message}`
     const parsed = JSON.parse(jsonMatch[0])
 
     if (parsed.action === 'delete') {
-      const { error: deleteError } = await supabase.from('shifts')
+      await supabase.from('shifts')
         .delete()
         .eq('business_id', business_id)
         .in('employee_id', employees.map(e => e.id))
         .gte('date', parsed.date_from)
         .lte('date', parsed.date_to)
-
-      if (deleteError) return Response.json({ error: deleteError.message }, { status: 500 })
       return Response.json({ success: true, message: parsed.message, count: 0 })
     }
 
