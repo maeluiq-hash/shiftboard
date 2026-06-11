@@ -286,6 +286,27 @@ export default function AdminClient({ profile, employees, shifts: initialShifts,
           </div>
         </nav>
 
+        <div style={{display:"flex", alignItems:"center", gap:"8px", marginBottom:"20px", flexWrap:"wrap"}}>
+          {businesses.map(biz => (
+            <button
+              key={biz.id}
+              onClick={() => { window.location.href = `/admin?biz=${biz.id}` }}
+              style={{padding:"8px 18px", borderRadius:"12px", border: biz.id === activeBizId ? "none" : "1.5px solid #E5E7EB", background: biz.id === activeBizId ? "linear-gradient(135deg, #1D9E75, #0F6E56)" : "white", color: biz.id === activeBizId ? "white" : "#6B7280", fontSize:"13px", fontWeight:"600", cursor:"pointer", boxShadow: biz.id === activeBizId ? "0 4px 12px rgba(29,158,117,0.3)" : "0 1px 3px rgba(0,0,0,0.04)"}}
+            >
+              🏠 {biz.name}
+            </button>
+          ))}
+          {!showAddBusiness ? (
+            <button onClick={() => setShowAddBusiness(true)} style={{padding:"8px 14px", borderRadius:"12px", border:"1.5px dashed #D1D5DB", background:"transparent", fontSize:"13px", fontWeight:"600", cursor:"pointer", color:"#9CA3AF"}}>+ Nouvel établissement</button>
+          ) : (
+            <div style={{display:"flex", gap:"8px", alignItems:"center"}}>
+              <input value={newBizName} onChange={e => setNewBizName(e.target.value)} onKeyDown={e => e.key === "Enter" && addBusiness()} placeholder="Nom de l'établissement" autoFocus style={{padding:"8px 14px", borderRadius:"10px", border:"1.5px solid #E5E7EB", fontSize:"13px", color:"#111827", outline:"none", width:"180px"}} />
+              <button onClick={addBusiness} disabled={loading} style={{padding:"8px 14px", background:"linear-gradient(135deg, #1D9E75, #0F6E56)", color:"white", border:"none", borderRadius:"10px", fontSize:"13px", fontWeight:"600", cursor:"pointer"}}>{loading ? "..." : "Créer"}</button>
+              <button onClick={() => setShowAddBusiness(false)} style={{padding:"8px 14px", background:"white", color:"#374151", border:"1.5px solid #E5E7EB", borderRadius:"10px", fontSize:"13px", fontWeight:"600", cursor:"pointer"}}>✕</button>
+            </div>
+          )}
+        </div>
+
         {pendingList.length > 0 && (
           <div className="sb-pending">
             <div style={{fontSize:'13px', fontWeight:'700', color:'#92400E', marginBottom:'10px'}}>⏳ {pendingList.length} compte{pendingList.length > 1 ? 's' : ''} en attente</div>
