@@ -152,7 +152,7 @@ export default function AdminClient({ profile, employees, allEmployees, shifts: 
     setAiLoading(true)
     const userMsg = aiMessage; setAiMessage('')
     setChatHistory(h => [...h, { role: 'user', text: userMsg }])
-    const res = await fetch('/api/ai-schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: userMsg, employees: empEmployees }) })
+    const res = await fetch('/api/ai-schedule', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: userMsg, employees: empEmployees, business_id: activeBizId }) })
     const data = await res.json()
     if (data.error) setChatHistory(h => [...h, { role: 'ai', text: 'Erreur: ' + data.error }])
     else { setChatHistory(h => [...h, { role: 'ai', text: `✅ ${data.message} (${data.count} shifts créés)` }]); setTimeout(() => window.location.reload(), 1500) }
@@ -568,7 +568,7 @@ export default function AdminClient({ profile, employees, allEmployees, shifts: 
           </div>
         )}
 
-        {tab === 'settings' && <SettingsTab />}
+        {tab === 'settings' && <SettingsTab activeBizId={activeBizId} />}
       </div>
     </>
   )

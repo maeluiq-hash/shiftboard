@@ -6,15 +6,16 @@ export async function POST(request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return Response.json({ error: 'Non autorisé' }, { status: 401 })
 
-    const { message, employees } = await request.json()
+    const { message, employees, business_id } = await request.json()
     const employeeList = employees.map(e => `${e.full_name} (id: ${e.id})`).join(', ')
 
     const { data: settingsData } = await supabase.from('settings').select('*')
     const settings = {}
     settingsData?.forEach(row => { settings[row.key] = row.value })
 
-    const businessContext = settings.business_context || ''
-    const openingHours = settings.opening_hours || ''
+    const biz = business_id || 'default'
+    const businessContext = settings[`business_context_${biz}`] || settings.business_context || ''
+    const openingHours = settings[`opening_hours_${biz}`] || settings.opening_hours || ''
 
     const prompt = `Tu es un assistant de planification pour un restaurant/bar.
 Tu dois générer des horaires de travail en JSON.
@@ -60,9 +61,13 @@ Demande: ${message}`
 
     const parsed = JSON.parse(jsonMatch[0])
 
-    await supabase.from('shifts').delete().in('employee_id', employees.map(e => e.id))
-      .gte('date', parsed.shifts[0]?.date || '2026-01-01')
-      .lte('date', parsed.shifts[parsed.shifts.length-1]?.date || '2099-01-01')
+    if (business_id) {
+      await supabase.from('shifts').delete()
+        .eq('business_id', business_id)
+        .in('employee_id', employees.map(e => e.id))
+        .gte('date', parsed.shifts[0]?.date || '2026-01-01')
+        .lte('date', parsed.shifts[parsed.shifts.length-1]?.date || '2099-01-01')
+    }
 
     const { error: insertError } = await supabase.from('shifts').insert(
       parsed.shifts.map(s => ({
@@ -70,7 +75,8 @@ Demande: ${message}`
         date: s.date,
         shift_type: s.shift_type,
         start_time: s.start_time,
-        end_time: s.end_time
+        end_time: s.end_time,
+        business_id: business_id || null
       }))
     )
 
