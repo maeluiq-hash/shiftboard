@@ -110,7 +110,7 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
     if (workingEmps.length === 0) continue
 
     const slots = [
-      { start: open, end: splitPoint, type: 'matin', needed: isSaturday ? 2 : 1, isRenfort: false },
+      { start: open, end: splitPoint, type: 'matin', needed: isSaturday ? 2 : 1, isRenfort: false, mustFill: isSaturday },
       { start: splitPoint, end: close, type: 'soir', needed: 1, isRenfort: false }
     ]
     if (isFriday || isSaturday) {
