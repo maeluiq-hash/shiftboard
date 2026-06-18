@@ -123,8 +123,14 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
   employees.forEach(e => { empTotalMins[e.id] = 0 })
 
   function pickBest(candidates, slotType, dayIdx, exclude) {
-    const pool = candidates.filter(e => !exclude.has(e.id))
+    let pool = candidates.filter(e => !exclude.has(e.id))
     if (pool.length === 0) return null
+    // Exclusion stricte : qui a déjà atteint son max_hours est retiré du pool, sauf si c'est le seul dispo
+    const poolUnderMax = pool.filter(e => {
+      if (!e.max_hours) return true
+      return (empTotalMins[e.id] / 60) < e.max_hours
+    })
+    if (poolUnderMax.length > 0) pool = poolUnderMax
     return pool.sort((a, b) => {
       const aIdx = employees.findIndex(e => e.id === a.id)
       const bIdx = employees.findIndex(e => e.id === b.id)
