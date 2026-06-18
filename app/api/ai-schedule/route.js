@@ -201,6 +201,9 @@ Demande: "${message}"` }]
     })
 
     const intentData = await intentRes.json()
+    if (!intentRes.ok || !intentData.content) {
+      return Response.json({ error: 'Erreur API Claude: ' + JSON.stringify(intentData) }, { status: 500 })
+    }
     const intentText = intentData.content[0].text.trim()
     const intentMatch = intentText.match(/\{[\s\S]*\}/)
     const intent = intentMatch ? JSON.parse(intentMatch[0]) : { action: 'create', week_offset: 0 }
