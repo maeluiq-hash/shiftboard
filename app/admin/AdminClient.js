@@ -122,6 +122,14 @@ export default function AdminClient({ profile, employees, allEmployees, shifts: 
     window.location.reload()
   }
 
+  async function updateEmployeeHours(empId, minH, maxH) {
+    await fetch('/api/update-employee-hours', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employee_id: empId, min_hours: minH, max_hours: maxH })
+    })
+  }
+
   async function deleteEmployee(empId) {
     if (!confirm('Supprimer cet employé ?')) return
     await fetch('/api/delete-employee', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ employee_id: empId }) })
@@ -561,6 +569,25 @@ export default function AdminClient({ profile, employees, allEmployees, shifts: 
                         ))}
                       </div>
                     )}
+                    <div style={{display:'flex', gap:'8px', marginTop:'10px', alignItems:'center'}}>
+                      <span style={{fontSize:'11px', color:'#9CA3AF', fontWeight:'600'}}>Heures cibles:</span>
+                      <input
+                        type="number"
+                        defaultValue={emp.min_hours || ''}
+                        placeholder="min"
+                        onBlur={(e) => updateEmployeeHours(emp.id, e.target.value, emp.max_hours)}
+                        style={{width:'50px', padding:'4px 6px', borderRadius:'6px', border:'1px solid #E5E7EB', fontSize:'12px', color:'#111827'}}
+                      />
+                      <span style={{fontSize:'11px', color:'#9CA3AF'}}>à</span>
+                      <input
+                        type="number"
+                        defaultValue={emp.max_hours || ''}
+                        placeholder="max"
+                        onBlur={(e) => updateEmployeeHours(emp.id, emp.min_hours, e.target.value)}
+                        style={{width:'50px', padding:'4px 6px', borderRadius:'6px', border:'1px solid #E5E7EB', fontSize:'12px', color:'#111827'}}
+                      />
+                      <span style={{fontSize:'11px', color:'#9CA3AF'}}>h/sem</span>
+                    </div>
                   </div>
                 )
               })}
