@@ -98,7 +98,13 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
     const minNeeded = isSaturday ? 3 : 2
     const working = employees.filter(e => !empRestDays[e.id].includes(dayIdx))
     if (working.length >= minNeeded) continue
-    for (const emp of employees) {
+    // Priorité aux employés AVEC cible pour combler le manque, Tibo (sans cible) en dernier recours
+    const sortedForCoverage = [...employees].sort((a, b) => {
+      const aHasCible = a.min_hours || a.max_hours ? 0 : 1
+      const bHasCible = b.min_hours || b.max_hours ? 0 : 1
+      return aHasCible - bHasCible
+    })
+    for (const emp of sortedForCoverage) {
       if (!empRestDays[emp.id].includes(dayIdx)) continue
       for (let altDay = 0; altDay < 7; altDay++) {
         if (empRestDays[emp.id].includes(altDay)) continue
