@@ -65,18 +65,24 @@ function parseConstraints(message, employees) {
 }
 
 function generateSchedule(employees, weekDates, openingHours, constraints, weekNumber) {
-  const empTotalAssignedMins = {}
-  employees.forEach(e => { empTotalAssignedMins[e.id] = 0 })
   const shifts = []
   const n = employees.length
-  const restPatterns = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,0]]
-  const empRestDays = {}
+  if (n === 0) return shifts
 
+  // Templates de shifts par type de jour, basés sur le fonctionnement réel de Barbacane
+  // Chaque jour normal : 1 shift matin (6-7h) + 1 shift soir (4-5h)
+  // Vendredi : matin + soir + renfort 19h-23h
+  // Samedi : 2 matin (9h-17h et 9h-13h) + soir + renfort 19h-23h
+  // Dimanche : matin + soir
+
+  const empRestDays = {}
+  const restPatterns = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,0]]
   for (let i = 0; i < n; i++) {
     const patternIdx = (i + weekNumber) % restPatterns.length
     empRestDays[employees[i].id] = [...restPatterns[patternIdx]]
   }
 
+  // S'assurer d'une couverture minimale (3 dispo samedi, 2 les autres jours)
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
     if (!openingHours[dayIdx]) continue
     const isSaturday = dayIdx === 5
@@ -98,66 +104,100 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
     }
   }
 
+  const empTotalMins = {}
+  employees.forEach(e => { empTotalMins[e.id] = 0 })
+
+  function pickBest(candidates, slotType, dayIdx, exclude) {
+    const pool = candidates.filter(e => !exclude.has(e.id))
+    if (pool.length === 0) return null
+    return pool.sort((a, b) => {
+      const aIdx = employees.findIndex(e => e.id === a.id)
+      const bIdx = employees.findIndex(e => e.id === b.id)
+      const aPref = (aIdx + dayIdx + weekNumber) % 2 === 0 ? 'matin' : 'soir'
+      const bPref = (bIdx + dayIdx + weekNumber) % 2 === 0 ? 'matin' : 'soir'
+      const aMatch = aPref === slotType ? 0 : 1
+      const bMatch = bPref === slotType ? 0 : 1
+      const aMin = a.min_hours || 0
+      const bMin = b.min_hours || 0
+      const aBehind = aMin > 0 && (empTotalMins[a.id] / 60) < aMin ? -5 : 0
+      const bBehind = bMin > 0 && (empTotalMins[b.id] / 60) < bMin ? -5 : 0
+      const aMax = a.max_hours
+      const bMax = b.max_hours
+      const aOver = aMax && (empTotalMins[a.id] / 60) >= aMax ? 8 : 0
+      const bOver = bMax && (empTotalMins[b.id] / 60) >= bMax ? 8 : 0
+      return (aMatch + aBehind + aOver) - (bMatch + bBehind + bOver)
+    })[0]
+  }
+
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
     const date = weekDates[dayIdx]
     const hours = openingHours[dayIdx]
     if (!hours) continue
     const { open, close } = hours
-    const totalMins = close - open
     const isFriday = dayIdx === 4
     const isSaturday = dayIdx === 5
-    const rawSplit = open + Math.round(totalMins * 0.55 / 60) * 60
-    const splitPoint = Math.min(rawSplit, 17 * 60)
+
     const workingEmps = employees.filter(e => !empRestDays[e.id].includes(dayIdx))
     if (workingEmps.length === 0) continue
 
-    const slots = [
-      { start: open, end: splitPoint, type: 'matin', needed: isSaturday ? 2 : 1, isRenfort: false, mustFill: isSaturday },
-      { start: splitPoint, end: close, type: 'soir', needed: 1, isRenfort: false }
-    ]
-    if (isFriday || isSaturday) {
-      slots.push({ start: 19 * 60, end: 23 * 60, type: 'soir', needed: 1, isRenfort: true })
+    const assignedToday = new Set()
+    const closeH = close % (24*60)
+
+    function addShift(emp, startMin, endMin, type) {
+      shifts.push({
+        employee_id: emp.id,
+        date,
+        shift_type: type,
+        start_time: minsToTime(startMin),
+        end_time: minsToTime(endMin % (24*60))
+      })
+      empTotalMins[emp.id] += (endMin - startMin)
+      assignedToday.add(emp.id)
     }
 
-    const assignedThisDay = new Set()
-    for (const slot of slots) {
-      const candidates = [...workingEmps].sort((a, b) => {
-        const aIdx = employees.findIndex(e => e.id === a.id)
-        const bIdx = employees.findIndex(e => e.id === b.id)
-        const aAssigned = assignedThisDay.has(a.id) ? 10 : 0
-        const bAssigned = assignedThisDay.has(b.id) ? 10 : 0
-        const aPref = (aIdx + dayIdx + weekNumber) % 2 === 0 ? 'matin' : 'soir'
-        const bPref = (bIdx + dayIdx + weekNumber) % 2 === 0 ? 'matin' : 'soir'
-        const aMatch = aPref === slot.type ? 0 : 1
-        const bMatch = bPref === slot.type ? 0 : 1
-        // Priorité : ceux qui n'ont pas encore atteint leur min_hours passent en premier
-        const aMin = a.min_hours || 0
-        const bMin = b.min_hours || 0
-        const aBehind = aMin > 0 && (empTotalAssignedMins[a.id] / 60) < aMin ? -5 : 0
-        const bBehind = bMin > 0 && (empTotalAssignedMins[b.id] / 60) < bMin ? -5 : 0
-        return (aAssigned + aMatch + aBehind) - (bAssigned + bMatch + bBehind)
-      })
+    if (isSaturday) {
+      // 2 personnes le matin : une longue (open -> close-X), une courte (open -> open+4h)
+      const morningLongEnd = open + 8 * 60 // 8h de shift
+      const morningShortEnd = open + 4 * 60 // 4h de shift
+      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      if (emp1) addShift(emp1, open, Math.min(morningLongEnd, close), 'matin')
+      const emp2 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      if (emp2) addShift(emp2, open, Math.min(morningShortEnd, close), 'matin')
 
-      let assigned = 0
-      const slotMins = slot.end - slot.start
-      for (const emp of candidates) {
-        if (assigned >= slot.needed) break
-        if (slot.isRenfort && assignedThisDay.has(emp.id)) continue
-        const empMax = emp.max_hours
-        if (empMax && (empTotalAssignedMins[emp.id] + slotMins) / 60 > empMax + 2) continue
-        shifts.push({
-          employee_id: emp.id,
-          date,
-          shift_type: slot.type,
-          start_time: minsToTime(slot.start),
-          end_time: minsToTime(slot.end % (24*60))
-        })
-        assignedThisDay.add(emp.id)
-        empTotalAssignedMins[emp.id] += slotMins
-        assigned++
-      }
+      // Soir : 17h -> close
+      const eveningStart = Math.max(17 * 60, morningShortEnd)
+      const emp3 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      if (emp3) addShift(emp3, eveningStart, close, 'soir')
+
+      // Renfort 19h-23h
+      const emp4 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      if (emp4) addShift(emp4, 19 * 60, 23 * 60, 'soir')
+
+    } else if (isFriday) {
+      // Matin classique
+      const morningEnd = Math.min(open + 6 * 60, 17 * 60)
+      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      if (emp1) addShift(emp1, open, morningEnd, 'matin')
+
+      // Soir classique
+      const emp2 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      if (emp2) addShift(emp2, morningEnd, close, 'soir')
+
+      // Renfort 19h-23h
+      const emp3 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      if (emp3) addShift(emp3, 19 * 60, 23 * 60, 'soir')
+
+    } else {
+      // Jour normal : 1 matin + 1 soir
+      const morningEnd = Math.min(open + 6 * 60, 17 * 60)
+      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      if (emp1) addShift(emp1, open, morningEnd, 'matin')
+
+      const emp2 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      if (emp2) addShift(emp2, morningEnd, close, 'soir')
     }
   }
+
   return shifts
 }
 
