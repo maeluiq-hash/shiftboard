@@ -131,7 +131,9 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
       const projected = (empTotalMins[e.id] + (slotMinsForCheck || 0)) / 60
       return projected <= e.max_hours
     })
-    if (poolUnderMax.length > 0) pool = poolUnderMax
+    // Si personne ne respecte le plafond, on préfère ne pas assigner plutôt que de faire dépasser quelqu'un
+    if (poolUnderMax.length === 0) return null
+    pool = poolUnderMax
     return pool.sort((a, b) => {
       const aIdx = employees.findIndex(e => e.id === a.id)
       const bIdx = employees.findIndex(e => e.id === b.id)
