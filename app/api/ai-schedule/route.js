@@ -117,15 +117,26 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
       const bPref = (bIdx + dayIdx + weekNumber) % 2 === 0 ? 'matin' : 'soir'
       const aMatch = aPref === slotType ? 0 : 1
       const bMatch = bPref === slotType ? 0 : 1
-      const aMin = a.min_hours || 0
-      const bMin = b.min_hours || 0
-      const aBehind = aMin > 0 && (empTotalMins[a.id] / 60) < aMin ? -5 : 0
-      const bBehind = bMin > 0 && (empTotalMins[b.id] / 60) < bMin ? -5 : 0
+      // Priorité : viser le max_hours (cible haute), pas juste le minimum
+      const aTarget = a.max_hours || a.min_hours || 0
+      const bTarget = b.max_hours || b.min_hours || 0
+      const aBehind = aTarget > 0 && (empTotalMins[a.id] / 60) < aTarget ? -10 : 0
+      const bBehind = bTarget > 0 && (empTotalMins[b.id] / 60) < bTarget ? -10 : 0
       const aMax = a.max_hours
       const bMax = b.max_hours
       const aOver = aMax && (empTotalMins[a.id] / 60) >= aMax ? 8 : 0
       const bOver = bMax && (empTotalMins[b.id] / 60) >= bMax ? 8 : 0
-      return (aMatch + aBehind + aOver) - (bMatch + bBehind + bOver)
+      // Employés sans cible (comme Tibo) sont remplis en TOUT dernier, sauf si personne d'autre dispo
+      const aHasCible = a.min_hours || a.max_hours
+      const bHasCible = b.min_hours || b.max_hours
+      const aNoCible = !aHasCible ? 20 : 0
+      const bNoCible = !bHasCible ? 20 : 0
+      // Si les deux ont une cible non atteinte, celui le plus en retard passe avant
+      const aRatio = aHasCible ? (empTotalMins[a.id] / 60) / (a.max_hours || a.min_hours) : 1
+      const bRatio = bHasCible ? (empTotalMins[b.id] / 60) / (b.max_hours || b.min_hours) : 1
+      const aRatioBonus = aHasCible ? aRatio * 5 : 0
+      const bRatioBonus = bHasCible ? bRatio * 5 : 0
+      return (aMatch + aBehind + aOver + aNoCible + aRatioBonus) - (bMatch + bBehind + bOver + bNoCible + bRatioBonus)
     })[0]
   }
 
