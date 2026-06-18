@@ -32,6 +32,35 @@ function getTotalMins(shifts) {
   return shifts.reduce((acc, s) => acc + getMins(s.start_time, s.end_time), 0)
 }
 
+function EmployeeHoursInputs({ emp, onSave }) {
+  const [minH, setMinH] = useState(emp.min_hours || '')
+  const [maxH, setMaxH] = useState(emp.max_hours || '')
+
+  return (
+    <div style={{display:'flex', gap:'8px', marginTop:'10px', alignItems:'center'}}>
+      <span style={{fontSize:'11px', color:'#9CA3AF', fontWeight:'600'}}>Heures cibles:</span>
+      <input
+        type="number"
+        value={minH}
+        placeholder="min"
+        onChange={(e) => setMinH(e.target.value)}
+        onBlur={() => onSave(emp.id, minH, maxH)}
+        style={{width:'50px', padding:'4px 6px', borderRadius:'6px', border:'1px solid #E5E7EB', fontSize:'12px', color:'#111827'}}
+      />
+      <span style={{fontSize:'11px', color:'#9CA3AF'}}>à</span>
+      <input
+        type="number"
+        value={maxH}
+        placeholder="max"
+        onChange={(e) => setMaxH(e.target.value)}
+        onBlur={() => onSave(emp.id, minH, maxH)}
+        style={{width:'50px', padding:'4px 6px', borderRadius:'6px', border:'1px solid #E5E7EB', fontSize:'12px', color:'#111827'}}
+      />
+      <span style={{fontSize:'11px', color:'#9CA3AF'}}>h/sem</span>
+    </div>
+  )
+}
+
 export default function AdminClient({ profile, employees, allEmployees, shifts: initialShifts, pending, businesses, activeBizId, allBizEmployees }) {
   const [tab, setTab] = useState('planning')
   const [shifts, setShifts] = useState(initialShifts)
@@ -569,25 +598,7 @@ export default function AdminClient({ profile, employees, allEmployees, shifts: 
                         ))}
                       </div>
                     )}
-                    <div style={{display:'flex', gap:'8px', marginTop:'10px', alignItems:'center'}}>
-                      <span style={{fontSize:'11px', color:'#9CA3AF', fontWeight:'600'}}>Heures cibles:</span>
-                      <input
-                        type="number"
-                        defaultValue={emp.min_hours || ''}
-                        placeholder="min"
-                        onBlur={(e) => updateEmployeeHours(emp.id, e.target.value, emp.max_hours)}
-                        style={{width:'50px', padding:'4px 6px', borderRadius:'6px', border:'1px solid #E5E7EB', fontSize:'12px', color:'#111827'}}
-                      />
-                      <span style={{fontSize:'11px', color:'#9CA3AF'}}>à</span>
-                      <input
-                        type="number"
-                        defaultValue={emp.max_hours || ''}
-                        placeholder="max"
-                        onBlur={(e) => updateEmployeeHours(emp.id, emp.min_hours, e.target.value)}
-                        style={{width:'50px', padding:'4px 6px', borderRadius:'6px', border:'1px solid #E5E7EB', fontSize:'12px', color:'#111827'}}
-                      />
-                      <span style={{fontSize:'11px', color:'#9CA3AF'}}>h/sem</span>
-                    </div>
+                    <EmployeeHoursInputs emp={emp} onSave={updateEmployeeHours} />
                   </div>
                 )
               })}
