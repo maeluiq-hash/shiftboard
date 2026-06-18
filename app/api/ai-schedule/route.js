@@ -65,6 +65,8 @@ function parseConstraints(message, employees) {
 }
 
 function generateSchedule(employees, weekDates, openingHours, constraints, weekNumber) {
+  const empTotalAssignedMins = {}
+  employees.forEach(e => { empTotalAssignedMins[e.id] = 0 })
   const shifts = []
   const n = employees.length
   const restPatterns = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,0]]
@@ -128,13 +130,21 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
         const bPref = (bIdx + dayIdx + weekNumber) % 2 === 0 ? 'matin' : 'soir'
         const aMatch = aPref === slot.type ? 0 : 1
         const bMatch = bPref === slot.type ? 0 : 1
-        return (aAssigned + aMatch) - (bAssigned + bMatch)
+        // Priorité : ceux qui n'ont pas encore atteint leur min_hours passent en premier
+        const aMin = a.min_hours || 0
+        const bMin = b.min_hours || 0
+        const aBehind = aMin > 0 && (empTotalAssignedMins[a.id] / 60) < aMin ? -5 : 0
+        const bBehind = bMin > 0 && (empTotalAssignedMins[b.id] / 60) < bMin ? -5 : 0
+        return (aAssigned + aMatch + aBehind) - (bAssigned + bMatch + bBehind)
       })
 
       let assigned = 0
+      const slotMins = slot.end - slot.start
       for (const emp of candidates) {
         if (assigned >= slot.needed) break
         if (slot.isRenfort && assignedThisDay.has(emp.id)) continue
+        const empMax = emp.max_hours
+        if (empMax && (empTotalAssignedMins[emp.id] + slotMins) / 60 > empMax + 2) continue
         shifts.push({
           employee_id: emp.id,
           date,
@@ -143,6 +153,7 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
           end_time: minsToTime(slot.end % (24*60))
         })
         assignedThisDay.add(emp.id)
+        empTotalAssignedMins[emp.id] += slotMins
         assigned++
       }
     }
