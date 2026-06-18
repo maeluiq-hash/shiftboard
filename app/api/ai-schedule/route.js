@@ -122,13 +122,14 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
   const empTotalMins = {}
   employees.forEach(e => { empTotalMins[e.id] = 0 })
 
-  function pickBest(candidates, slotType, dayIdx, exclude) {
+  function pickBest(candidates, slotType, dayIdx, exclude, slotMinsForCheck) {
     let pool = candidates.filter(e => !exclude.has(e.id))
     if (pool.length === 0) return null
-    // Exclusion stricte : qui a déjà atteint son max_hours est retiré du pool, sauf si c'est le seul dispo
+    // Exclusion stricte : qui dépasserait son max_hours avec ce nouveau slot est retiré, sauf si c'est le seul dispo
     const poolUnderMax = pool.filter(e => {
       if (!e.max_hours) return true
-      return (empTotalMins[e.id] / 60) < e.max_hours
+      const projected = (empTotalMins[e.id] + (slotMinsForCheck || 0)) / 60
+      return projected <= e.max_hours
     })
     if (poolUnderMax.length > 0) pool = poolUnderMax
     return pool.sort((a, b) => {
@@ -191,41 +192,48 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
       // 2 personnes le matin : une longue (open -> close-X), une courte (open -> open+4h)
       const morningLongEnd = open + 8 * 60 // 8h de shift
       const morningShortEnd = open + 4 * 60 // 4h de shift
-      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      const morningLongMins = Math.min(morningLongEnd, close) - open
+      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday, morningLongMins)
       if (emp1) addShift(emp1, open, Math.min(morningLongEnd, close), 'matin')
-      const emp2 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      const morningShortMins = Math.min(morningShortEnd, close) - open
+      const emp2 = pickBest(workingEmps, 'matin', dayIdx, assignedToday, morningShortMins)
       if (emp2) addShift(emp2, open, Math.min(morningShortEnd, close), 'matin')
 
       // Soir : 17h -> close
       const eveningStart = Math.max(17 * 60, morningShortEnd)
-      const emp3 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      const eveningMins = close - eveningStart
+      const emp3 = pickBest(workingEmps, 'soir', dayIdx, assignedToday, eveningMins)
       if (emp3) addShift(emp3, eveningStart, close, 'soir')
 
       // Renfort 19h-23h
-      const emp4 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      const emp4 = pickBest(workingEmps, 'soir', dayIdx, assignedToday, 4 * 60)
       if (emp4) addShift(emp4, 19 * 60, 23 * 60, 'soir')
 
     } else if (isFriday) {
       // Matin classique
       const morningEnd = Math.min(open + 6 * 60, 17 * 60)
-      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      const morningMins = morningEnd - open
+      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday, morningMins)
       if (emp1) addShift(emp1, open, morningEnd, 'matin')
 
       // Soir classique
-      const emp2 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      const soirMins = close - morningEnd
+      const emp2 = pickBest(workingEmps, 'soir', dayIdx, assignedToday, soirMins)
       if (emp2) addShift(emp2, morningEnd, close, 'soir')
 
       // Renfort 19h-23h
-      const emp3 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      const emp3 = pickBest(workingEmps, 'soir', dayIdx, assignedToday, 4 * 60)
       if (emp3) addShift(emp3, 19 * 60, 23 * 60, 'soir')
 
     } else {
       // Jour normal : 1 matin + 1 soir
       const morningEnd = Math.min(open + 6 * 60, 17 * 60)
-      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday)
+      const morningMins = morningEnd - open
+      const emp1 = pickBest(workingEmps, 'matin', dayIdx, assignedToday, morningMins)
       if (emp1) addShift(emp1, open, morningEnd, 'matin')
 
-      const emp2 = pickBest(workingEmps, 'soir', dayIdx, assignedToday)
+      const soirMins = close - morningEnd
+      const emp2 = pickBest(workingEmps, 'soir', dayIdx, assignedToday, soirMins)
       if (emp2) addShift(emp2, morningEnd, close, 'soir')
     }
   }
