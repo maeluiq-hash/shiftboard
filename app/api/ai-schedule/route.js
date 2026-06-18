@@ -81,6 +81,15 @@ function generateSchedule(employees, weekDates, openingHours, constraints, weekN
     const patternIdx = (i + weekNumber) % restPatterns.length
     empRestDays[employees[i].id] = [...restPatterns[patternIdx]]
   }
+  // Les employés sans cible (comme Tibo) ont plus de jours de repos pour laisser la place aux prioritaires
+  for (const emp of employees) {
+    if (!emp.min_hours && !emp.max_hours) {
+      const base = empRestDays[emp.id]
+      const extraDays = [0,1,2,3,4,5,6].filter(d => !base.includes(d))
+      // Ajoute 2 jours de repos supplémentaires
+      empRestDays[emp.id] = [...base, extraDays[0], extraDays[1]].filter((v,i,a) => a.indexOf(v) === i)
+    }
+  }
 
   // S'assurer d'une couverture minimale (3 dispo samedi, 2 les autres jours)
   for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
