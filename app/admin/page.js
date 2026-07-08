@@ -58,7 +58,7 @@ export default async function AdminPage(props) {
     <AdminClient
       profile={profile}
       employees={employees || []}
-      allEmployees={allProfiles?.filter(e => e.role === 'employee') || []}
+      allEmployees={allProfiles?.filter(e => e.role === 'employee' || e.role === 'admin') || []}
       shifts={shifts || []}
       pending={pending}
       businesses={businesses || []}
